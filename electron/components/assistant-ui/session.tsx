@@ -22,8 +22,13 @@ import { Button } from "@/components/ui/button";
 import { MarkdownText } from "@/components/assistant-ui/markdown-text";
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
 import { ToolFallback } from "./tool-fallback";
+import { ChatSession } from "@/lib/types";
 
-export const Thread: FC = () => {
+interface SessionProps {
+  currentSession: ChatSession;
+}
+
+export const Session: FC<SessionProps> = ({ currentSession }) => {
   return (
     <ThreadPrimitive.Root
       className="bg-background box-border flex h-full flex-col overflow-hidden"
@@ -32,7 +37,7 @@ export const Thread: FC = () => {
       }}
     >
       <ThreadPrimitive.Viewport className="flex h-full flex-col items-center overflow-y-scroll scroll-smooth bg-inherit px-4 pt-8">
-        <ThreadWelcome />
+        <SessionWelcome />
 
         <ThreadPrimitive.Messages
           components={{
@@ -47,7 +52,7 @@ export const Thread: FC = () => {
         </ThreadPrimitive.If>
 
         <div className="sticky bottom-0 mt-3 flex w-full max-w-[var(--thread-max-width)] flex-col items-center justify-end rounded-t-lg bg-inherit pb-4">
-          <ThreadScrollToBottom />
+          <SessionScrollToBottom />
           <Composer />
         </div>
       </ThreadPrimitive.Viewport>
@@ -55,7 +60,7 @@ export const Thread: FC = () => {
   );
 };
 
-const ThreadScrollToBottom: FC = () => {
+const SessionScrollToBottom: FC = () => {
   return (
     <ThreadPrimitive.ScrollToBottom asChild>
       <TooltipIconButton
@@ -69,20 +74,20 @@ const ThreadScrollToBottom: FC = () => {
   );
 };
 
-const ThreadWelcome: FC = () => {
+const SessionWelcome: FC = () => {
   return (
     <ThreadPrimitive.Empty>
       <div className="flex w-full max-w-[var(--thread-max-width)] flex-grow flex-col">
         <div className="flex w-full flex-grow flex-col items-center justify-center">
           <p className="mt-4 font-medium">How can I help you today?</p>
         </div>
-        <ThreadWelcomeSuggestions />
+        <SessionWelcomeSuggestions />
       </div>
     </ThreadPrimitive.Empty>
   );
 };
 
-const ThreadWelcomeSuggestions: FC = () => {
+const SessionWelcomeSuggestions: FC = () => {
   return (
     <div className="mt-3 flex w-full items-stretch justify-center gap-4">
       <ThreadPrimitive.Suggestion
