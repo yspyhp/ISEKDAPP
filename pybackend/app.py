@@ -233,38 +233,43 @@ def chat():
     if session:
         session["updatedAt"] = datetime.now().isoformat()
     
-    # Return streaming response format that assistant-ui expects
+    # --- 修改返回格式为官方 example ---
     response_data = {
-        "id": ai_message["id"],
-        "content": ai_response,
-        "role": "assistant",
-        "timestamp": ai_message["timestamp"]
+        "aiMessage": {
+            "id": ai_message["id"],
+            "role": ai_message["role"],
+            "content": ai_message["content"],
+            "timestamp": ai_message["timestamp"]
+        },
+        "userMessage": {
+            "id": user_message["id"],
+            "role": user_message["role"],
+            "content": user_message["content"],
+            "timestamp": user_message["timestamp"]
+        },
+        "agent": {
+            "id": agent.get("id", agent_id),
+            "name": agent.get("name", "Agent")
+        }
     }
-    
     # 判断前端是否要求流式返回
     accept_header = request.headers.get('Accept', '')
     if 'text/event-stream' in accept_header:
         import json
         from flask import Response, stream_with_context
         def generate():
-            # Use assistant-stream protocol format with type:json format
-            # Type "0" = TextDelta for text content
-            content = response_data["content"]
-            # Split content into chunks for streaming effect
-            words = content.split()
-            for i, word in enumerate(words):
-                # TextDelta should send the text directly, not wrapped in an object
-                text_chunk = word + (" " if i < len(words) - 1 else "")
-                yield f'0:{json.dumps(text_chunk)}\n'
+            content = response_data["aiMessage"]["content"]
+            chunk_size = 3  # 每3个字符推送一次
+            for i in range(0, len(content), chunk_size):
+                text_chunk = content[i:i+chunk_size]
+                yield f'0:{{"text": {json.dumps(text_chunk)}}}\n'
                 import time
-                time.sleep(0.1)  # Simulate streaming delay
-            
-            # Type "d" = FinishMessage to end the stream
+                time.sleep(0.04)  # 更快推送
             finish_data = {
                 "finishReason": "stop",
                 "usage": {
                     "promptTokens": 0,
-                    "completionTokens": len(words)
+                    "completionTokens": len(content)
                 }
             }
             yield f'd:{json.dumps(finish_data)}\n'

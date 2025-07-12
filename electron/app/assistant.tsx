@@ -1,17 +1,18 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { AssistantRuntimeProvider } from "@assistant-ui/react";
-import { useChatRuntime } from "@assistant-ui/react-ai-sdk";
-import { Session } from "@/components/assistant-ui/session";
+import { AssistantRuntimeProvider, AppendMessage } from "@assistant-ui/react";
+import { useExternalStoreRuntime } from "@assistant-ui/react";
+import { Thread } from "@/components/assistant-ui/thread";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
 import { Separator } from "@/components/ui/separator";
 import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
 import { AIAgent, ChatSession } from "@/lib/types";
-import { agentsApi, sessionsApi } from "@/lib/api";
+import { agentsApi, sessionsApi, messagesApi, chatApi } from "@/lib/api";
 import { Sparkles } from "lucide-react";
 import { shouldIgnoreError, getErrorMessage, cleanupMessageCache } from "@/lib/utils";
+import { v4 as uuidv4 } from 'uuid';
 
 // 工具函数：归一化消息 content 字段为字符串
 function normalizeMessageContent(msg: { content: string | Array<{ text: string }> }) {
@@ -24,6 +25,33 @@ function normalizeMessageContent(msg: { content: string | Array<{ text: string }
 // 消息缓存
 const messageCache = new Map<string, { messages: unknown[], timestamp: number }>();
 const CACHE_DURATION = 5 * 60 * 1000; // 5分钟缓存
+
+// ThreadMessageLike 结构转换
+type ThreadMessageLike = {
+  role: "user" | "assistant";
+  content: Array<{ type: "text"; text: string }>;
+  id?: string;
+  timestamp?: string;
+};
+
+function toThreadMessageLike(msg: any): ThreadMessageLike {
+  return {
+    role: msg.role,
+    content: [{ type: "text", text: msg.content }],
+    id: msg.id,
+    timestamp: msg.timestamp,
+  };
+}
+
+function toChatMessage(msg: ThreadMessageLike, sessionId: string) {
+  return {
+    id: msg.id || "",
+    sessionId,
+    content: msg.content?.[0]?.text || "",
+    role: msg.role,
+    timestamp: msg.timestamp || new Date().toISOString(),
+  };
+}
 
 // 为特定会话创建 runtime 的组件
 const SessionRuntime: React.FC<{ session: ChatSession; onMessageUpdate?: () => void }> = ({ session, onMessageUpdate }) => {
@@ -145,65 +173,85 @@ const SessionRuntime: React.FC<{ session: ChatSession; onMessageUpdate?: () => v
     );
   }
 
-  // 只有在initialMessages准备好时才渲染ChatRuntime组件
-  if (!initialMessages) {
-    return <div className="text-gray-500">没有找到历史消息</div>;
-  }
-
-  // 使用key属性强制重新创建组件，确保runtime在initialMessages准备好时初始化
+  // 渲染 ChatRuntime 组件
   return (
-    <ChatRuntime 
-      key={`${session.id}-${initialMessages.length}`} 
-      session={session} 
-      initialMessages={initialMessages} 
+    <ChatRuntime
+      key={session.id}
+      session={session}
       onMessageUpdate={onMessageUpdate}
     />
   );
 };
 
-// 专门负责渲染runtime的组件，只在initialMessages准备好时才创建
-const ChatRuntime: React.FC<{ session: ChatSession; initialMessages: any[]; onMessageUpdate?: () => void }> = ({ 
-  session, 
-  initialMessages,
+interface ChatRuntimeProps {
+  session: ChatSession;
+  onMessageUpdate?: () => void;
+}
+
+const ChatRuntime: React.FC<ChatRuntimeProps> = ({
+  session,
   onMessageUpdate
 }) => {
-  console.log('🔧 ChatRuntime: Creating runtime with messages count:', initialMessages.length);
+  const [messages, setMessages] = useState<any[]>([]);
+  useEffect(() => {
+    if (!session?.id) return;
+    messagesApi.getMessages(session.id).then(rawMsgs => {
+      setMessages(rawMsgs.map(toThreadMessageLike));
+    });
+  }, [session?.id]);
 
-  const runtime = useChatRuntime({
-    api: "/api/chat",
-    initialMessages, // 直接传递准备好的消息
-    body: {
-      sessionId: session.id,
-      agentId: session.agentId,
-      system: session.agentDescription
-    },
-    headers: {
-      'Accept': 'text/event-stream',
-      'Content-Type': 'application/json'
-    },
-    onFinish: (message) => {
-      console.log('✅ Message finished:', message);
-      // 更新缓存中的消息
-      const cached = messageCache.get(session.id);
-      if (cached) {
-        cached.messages.push(message);
-        cached.timestamp = Date.now();
+  const onNew = async (message: AppendMessage) => {
+    const userMsg: ThreadMessageLike = {
+      role: "user",
+      content: [...message.content] as { type: "text"; text: string }[],
+      timestamp: new Date().toISOString(),
+      id: uuidv4(),
+    };
+    setMessages((msgs) => [...msgs, userMsg]);
+    // 生成一次 assistant 消息 id
+    const aiMsgId = uuidv4();
+    let aiMsg: ThreadMessageLike = {
+      role: "assistant",
+      content: [],
+      timestamp: new Date().toISOString(),
+      id: aiMsgId,
+    };
+    setMessages((msgs) => [...msgs, aiMsg]);
+    let aiText = "";
+    for await (const chunk of chatApi.sendMessageStream(
+      userMsg.content[0]?.text,
+      session.id,
+      session.agentId,
+      [...messages, userMsg].map(m => toChatMessage(m, session.id))
+    )) {
+      if (chunk.type === 'text') {
+        aiText += chunk.text;
+        setMessages((msgs) => {
+          // 只替换最后一条 assistant 消息，id 不变
+          const idx = [...msgs].reverse().findIndex(m => m.role === 'assistant' && m.id === aiMsgId);
+          if (idx !== -1) {
+            const realIdx = msgs.length - 1 - idx;
+            const newMsgs = [...msgs];
+            newMsgs[realIdx] = { ...newMsgs[realIdx], content: [{ type: "text", text: aiText }] };
+            return newMsgs;
+          }
+          return msgs;
+        });
       }
-      // 通知父组件更新会话列表
-      onMessageUpdate?.();
-    },
-    onError: (error) => {
-      if (shouldIgnoreError(error)) {
-        console.log('🔄 Chat request aborted for session:', session.id);
-        return;
-      }
-      console.error('❌ Chat error:', getErrorMessage(error));
     }
+    onMessageUpdate?.();
+  };
+
+  const runtime = useExternalStoreRuntime({
+    messages,
+    setMessages,
+    onNew,
+    convertMessage: (msg: any) => msg,
   });
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>
-      <Session currentSession={session} />
+      <Thread key={session.id} />
     </AssistantRuntimeProvider>
   );
 };
@@ -402,35 +450,37 @@ export const Assistant = () => {
         onSessionCreated={handleSessionCreated}
         />
         <SidebarInset>
-          <header className="flex h-16 shrink-0 items-center gap-2 border-b px-4">
-            <SidebarTrigger />
-            <Separator orientation="vertical" className="mr-2 h-4" />
-            <Breadcrumb>
-              <BreadcrumbList>
-                <BreadcrumbItem className="hidden md:block">
-                  <BreadcrumbLink href="#">
-                    <div className="flex items-center gap-2">
-                      <Sparkles className="h-4 w-4" />
-                      ISEK UI
-                    </div>
-                  </BreadcrumbLink>
-                </BreadcrumbItem>
-                <BreadcrumbSeparator className="hidden md:block" />
-                <BreadcrumbItem>
-                  <BreadcrumbPage>
-                    <div className="flex items-center gap-2">
-                    <span>{currentSession.agentName}</span>
-                      <span className="text-gray-400">-</span>
-                    <span>{currentSession.title}</span>
-                    </div>
-                  </BreadcrumbPage>
-                </BreadcrumbItem>
-              </BreadcrumbList>
-            </Breadcrumb>
-          </header>
-          {/* 主内容区加 padding，避免悬浮按钮遮挡 */}
-          <div className="pb-24 pl-6 h-full">
-            <SessionRuntime key={currentSession.id} session={currentSession} onMessageUpdate={updateSessionsList} />
+          <div className="flex flex-col h-full">
+            <header className="flex h-16 shrink-0 items-center gap-2 border-b px-4 sticky top-0 z-20 bg-background">
+              <SidebarTrigger />
+              <Separator orientation="vertical" className="mr-2 h-4" />
+              <Breadcrumb>
+                <BreadcrumbList>
+                  <BreadcrumbItem className="hidden md:block">
+                    <BreadcrumbLink href="#">
+                      <div className="flex items-center gap-2">
+                        <Sparkles className="h-4 w-4" />
+                        ISEK UI
+                      </div>
+                    </BreadcrumbLink>
+                  </BreadcrumbItem>
+                  <BreadcrumbSeparator className="hidden md:block" />
+                  <BreadcrumbItem>
+                    <BreadcrumbPage>
+                      <div className="flex items-center gap-2">
+                      <span>{currentSession.agentName}</span>
+                        <span className="text-gray-400">-</span>
+                      <span>{currentSession.title}</span>
+                      </div>
+                    </BreadcrumbPage>
+                  </BreadcrumbItem>
+                </BreadcrumbList>
+              </Breadcrumb>
+            </header>
+            {/* 主内容区加 padding，避免悬浮按钮遮挡 */}
+            <div className="pb-24 pl-6 flex-1 min-h-0">
+              <SessionRuntime key={currentSession.id} session={currentSession} onMessageUpdate={updateSessionsList} />
+            </div>
           </div>
         </SidebarInset>
       </SidebarProvider>

@@ -1,26 +1,31 @@
-import { FC, useState } from 'react';
-import { MessageSquare, Sparkles, ArchiveIcon, PlusIcon } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { TooltipIconButton } from '@/components/assistant-ui/tooltip-icon-button';
-import { AgentSelector } from '@/components/agent-selector';
-import { AIAgent, ChatSession } from '@/lib/types';
-import { sessionsApi } from '@/lib/api';
+import type { FC } from "react";
+import {
+  ThreadListItemPrimitive,
+  ThreadListPrimitive,
+} from "@assistant-ui/react";
+import { ArchiveIcon, PlusIcon, Sparkles } from "lucide-react";
 
-interface SessionListProps {
+import { Button } from "@/components/ui/button";
+import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
+import { AgentSelector } from "@/components/agent-selector";
+import { AIAgent, ChatSession } from "@/lib/types";
+import { sessionsApi } from "@/lib/api";
+import { useState } from "react";
+
+interface ThreadListProps {
   onSessionCreated?: () => void;
   sessions?: ChatSession[];
   currentSession?: ChatSession | null;
   onSessionSelect?: (session: ChatSession | null) => void;
 }
 
-export const SessionList: FC<SessionListProps> = ({ 
-  onSessionCreated, 
-  sessions = [], 
+export const ThreadList: FC<ThreadListProps> = ({
+  onSessionCreated,
+  sessions = [],
   currentSession,
-  onSessionSelect 
+  onSessionSelect,
 }) => {
   const [showAgentSelector, setShowAgentSelector] = useState(false);
-
 
   const handleAgentSelect = async (agent: AIAgent) => {
     try {
@@ -32,7 +37,6 @@ export const SessionList: FC<SessionListProps> = ({
       onSessionCreated?.();
     } catch (error) {
       console.error('Failed to create session:', error);
-      // You can add error notifications here
     }
   };
 
@@ -47,7 +51,7 @@ export const SessionList: FC<SessionListProps> = ({
   const handleDeleteSession = async (sessionId: string) => {
     try {
       await sessionsApi.deleteSession(sessionId);
-      onSessionCreated?.(); // Refresh session list
+      onSessionCreated?.();
       if (currentSession && currentSession.id === sessionId && onSessionSelect) {
         onSessionSelect(null);
       }
@@ -67,8 +71,8 @@ export const SessionList: FC<SessionListProps> = ({
 
   return (
     <div className="flex flex-col items-stretch gap-1.5">
-      <SessionListNew onNewSession={() => setShowAgentSelector(true)} />
-      <SessionListItems 
+      <ThreadListNew onNewSession={() => setShowAgentSelector(true)} />
+      <ThreadListItems
         sessions={sessions}
         currentSession={currentSession}
         onSessionSelect={handleSessionSelect}
@@ -78,10 +82,10 @@ export const SessionList: FC<SessionListProps> = ({
   );
 };
 
-const SessionListNew: FC<{ onNewSession: () => void }> = ({ onNewSession }) => {
+const ThreadListNew: FC<{ onNewSession: () => void }> = ({ onNewSession }) => {
   return (
-    <Button 
-      className="data-[active]:bg-muted hover:bg-muted flex items-center justify-start gap-1 rounded-lg px-2.5 py-2 text-start" 
+    <Button
+      className="data-[active]:bg-muted hover:bg-muted flex items-center justify-start gap-1 rounded-lg px-2.5 py-2 text-start"
       variant="ghost"
       onClick={onNewSession}
     >
@@ -92,23 +96,23 @@ const SessionListNew: FC<{ onNewSession: () => void }> = ({ onNewSession }) => {
   );
 };
 
-interface SessionListItemsProps {
+interface ThreadListItemsProps {
   sessions: ChatSession[];
   currentSession?: ChatSession | null;
   onSessionSelect?: (session: ChatSession) => void;
   onDeleteSession?: (sessionId: string) => void;
 }
 
-const SessionListItems: FC<SessionListItemsProps> = ({ 
-  sessions, 
-  currentSession, 
+const ThreadListItems: FC<ThreadListItemsProps> = ({
+  sessions,
+  currentSession,
   onSessionSelect,
-  onDeleteSession 
+  onDeleteSession,
 }) => {
   if (sessions.length === 0) {
     return (
       <div className="px-3 py-4 text-center">
-        <MessageSquare className="h-8 w-8 text-gray-400 mx-auto mb-2" />
+        <Sparkles className="h-8 w-8 text-blue-400 mx-auto mb-2" />
         <p className="text-sm text-gray-500">No conversations yet</p>
         <p className="text-xs text-gray-400 mt-1">Click the button above to start a new chat</p>
       </div>
@@ -118,7 +122,7 @@ const SessionListItems: FC<SessionListItemsProps> = ({
   return (
     <div className="space-y-1">
       {sessions.map((session) => (
-        <SessionListItem
+        <ThreadListItem
           key={session.id}
           session={session}
           isActive={currentSession?.id === session.id}
@@ -130,25 +134,23 @@ const SessionListItems: FC<SessionListItemsProps> = ({
   );
 };
 
-interface SessionListItemProps {
+interface ThreadListItemProps {
   session: ChatSession;
   isActive: boolean;
   onSelect: () => void;
   onDelete: () => void;
 }
 
-const SessionListItem: FC<SessionListItemProps> = ({ 
-  session, 
-  isActive, 
-  onSelect, 
-  onDelete 
+const ThreadListItem: FC<ThreadListItemProps> = ({
+  session,
+  isActive,
+  onSelect,
+  onDelete,
 }) => {
   return (
-    <div 
+    <div
       className={`flex items-center gap-2 rounded-lg transition-all cursor-pointer ${
-        isActive 
-          ? 'bg-muted' 
-          : 'hover:bg-muted'
+        isActive ? 'bg-muted' : 'hover:bg-muted'
       }`}
       onClick={onSelect}
     >

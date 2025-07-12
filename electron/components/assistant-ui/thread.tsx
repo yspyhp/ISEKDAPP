@@ -2,6 +2,7 @@ import {
   ActionBarPrimitive,
   BranchPickerPrimitive,
   ComposerPrimitive,
+  ErrorPrimitive,
   MessagePrimitive,
   ThreadPrimitive,
 } from "@assistant-ui/react";
@@ -21,16 +22,8 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { MarkdownText } from "@/components/assistant-ui/markdown-text";
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
-import { ToolFallback } from "./tool-fallback";
-import { ChatSession } from "@/lib/types";
 
-interface SessionProps {
-  currentSession: ChatSession;
-}
-
-export const Session: FC<SessionProps> = ({ currentSession }) => {
-  console.log('🔧 Session: Rendering session for:', currentSession.id, currentSession.title);
-  
+export const Thread: FC = () => {
   return (
     <ThreadPrimitive.Root
       className="bg-background box-border flex h-full flex-col overflow-hidden"
@@ -38,31 +31,32 @@ export const Session: FC<SessionProps> = ({ currentSession }) => {
         ["--thread-max-width" as string]: "42rem",
       }}
     >
-      <ThreadPrimitive.Viewport className="flex h-full flex-col items-center overflow-y-scroll scroll-smooth bg-inherit px-4 pt-8">
-        <SessionWelcome />
+      <div className="flex h-full flex-col">
+        <ThreadPrimitive.Viewport className="flex-1 flex flex-col items-center overflow-y-auto scroll-smooth bg-inherit px-4 pt-8">
+          <ThreadWelcome />
 
-        <ThreadPrimitive.Messages
-          components={{
-            UserMessage: UserMessage,
-            EditComposer: EditComposer,
-            AssistantMessage: AssistantMessage,
-          }}
-        />
+          <ThreadPrimitive.Messages
+            components={{
+              UserMessage: UserMessage,
+              EditComposer: EditComposer,
+              AssistantMessage: AssistantMessage,
+            }}
+          />
 
-        <ThreadPrimitive.If empty={false}>
-          <div className="min-h-8 flex-grow" />
-        </ThreadPrimitive.If>
-
-        <div className="sticky bottom-0 mt-3 flex w-full max-w-[var(--thread-max-width)] flex-col items-center justify-end rounded-t-lg bg-inherit pb-4">
-          <SessionScrollToBottom />
+          <ThreadPrimitive.If empty={false}>
+            <div className="min-h-8 flex-grow" />
+          </ThreadPrimitive.If>
+        </ThreadPrimitive.Viewport>
+        <div className="sticky bottom-0 z-10 mt-3 flex w-full max-w-[var(--thread-max-width)] flex-col items-center justify-end rounded-t-lg bg-inherit pb-4 mx-auto">
+          <ThreadScrollToBottom />
           <Composer />
         </div>
-      </ThreadPrimitive.Viewport>
+      </div>
     </ThreadPrimitive.Root>
   );
 };
 
-const SessionScrollToBottom: FC = () => {
+const ThreadScrollToBottom: FC = () => {
   return (
     <ThreadPrimitive.ScrollToBottom asChild>
       <TooltipIconButton
@@ -76,20 +70,22 @@ const SessionScrollToBottom: FC = () => {
   );
 };
 
-const SessionWelcome: FC = () => {
+const ThreadWelcome: FC = () => {
   return (
     <ThreadPrimitive.Empty>
       <div className="flex w-full max-w-[var(--thread-max-width)] flex-grow flex-col">
         <div className="flex w-full flex-grow flex-col items-center justify-center">
-          <p className="mt-4 font-medium">How can I help you today?</p>
+          <p className="mt-4 font-medium">
+            How can I help you today?
+          </p>
         </div>
-        <SessionWelcomeSuggestions />
+        <ThreadWelcomeSuggestions />
       </div>
     </ThreadPrimitive.Empty>
   );
 };
 
-const SessionWelcomeSuggestions: FC = () => {
+const ThreadWelcomeSuggestions: FC = () => {
   return (
     <div className="mt-3 flex w-full items-stretch justify-center gap-4">
       <ThreadPrimitive.Suggestion
@@ -160,8 +156,6 @@ const ComposerAction: FC = () => {
 };
 
 const UserMessage: FC = () => {
-  console.log('🔧 UserMessage: Rendering user message');
-  
   return (
     <MessagePrimitive.Root className="grid auto-rows-auto grid-cols-[minmax(72px,1fr)_auto] gap-y-2 [&:where(>*)]:col-start-2 w-full max-w-[var(--thread-max-width)] py-4">
       <UserActionBar />
@@ -209,20 +203,27 @@ const EditComposer: FC = () => {
 };
 
 const AssistantMessage: FC = () => {
-  console.log('🔧 AssistantMessage: Rendering assistant message');
-  
   return (
     <MessagePrimitive.Root className="grid grid-cols-[auto_auto_1fr] grid-rows-[auto_1fr] relative w-full max-w-[var(--thread-max-width)] py-4">
       <div className="text-foreground max-w-[calc(var(--thread-max-width)*0.8)] break-words leading-7 col-span-2 col-start-2 row-start-1 my-1.5">
-        <MessagePrimitive.Content
-          components={{ Text: MarkdownText, tools: { Fallback: ToolFallback } }}
-        />
+        <MessagePrimitive.Content components={{ Text: MarkdownText }} />
+        <MessageError />
       </div>
 
       <AssistantActionBar />
 
       <BranchPicker className="col-start-2 row-start-2 -ml-2 mr-2" />
     </MessagePrimitive.Root>
+  );
+};
+
+const MessageError: FC = () => {
+  return (
+    <MessagePrimitive.Error>
+      <ErrorPrimitive.Root className="border-destructive bg-destructive/10 dark:text-red-200 dark:bg-destructive/5 text-destructive mt-2 rounded-md border p-3 text-sm">
+        <ErrorPrimitive.Message className="line-clamp-2" />
+      </ErrorPrimitive.Root>
+    </MessagePrimitive.Error>
   );
 };
 
@@ -260,10 +261,7 @@ const BranchPicker: FC<BranchPickerPrimitive.Root.Props> = ({
   return (
     <BranchPickerPrimitive.Root
       hideWhenSingleBranch
-      className={cn(
-        "text-muted-foreground inline-flex items-center text-xs",
-        className
-      )}
+      className={cn("text-muted-foreground inline-flex items-center text-xs", className)}
       {...rest}
     >
       <BranchPickerPrimitive.Previous asChild>

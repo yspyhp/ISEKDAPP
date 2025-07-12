@@ -9,7 +9,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar"
-import { SessionList } from "./assistant-ui/session-list"
+import { ThreadList } from "./assistant-ui/thread-list"
 import { AIAgent, ChatSession } from "@/lib/types"
 
 interface AppSidebarProps extends React.ComponentProps<typeof Sidebar> {
@@ -48,10 +48,10 @@ export function AppSidebar({
         </SidebarMenu>
       </SidebarHeader>
       <SidebarContent>
-        <SessionList 
+        <ThreadList
           sessions={sessions}
           currentSession={currentSession}
-          onSessionSelect={onSessionSelect}
+          onSessionSelect={onSessionSelect as (session: ChatSession | null) => void}
           onSessionCreated={onSessionCreated}
         />
       </SidebarContent>

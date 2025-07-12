@@ -123,4 +123,53 @@ export const chatApi = {
 
     return this.sendMessage(request);
   },
+
+  // 流式发送消息，返回异步生成器
+  async *sendMessageStream(
+    message: string,
+    sessionId: string,
+    agentId: string,
+    messages: ChatMessage[] = []
+  ) {
+    const agent = await agentsApi.getAgent(agentId);
+    const request: SendMessageRequest = {
+      agentId,
+      address: agent.address,
+      sessionId,
+      messages,
+      system: agent.systemPrompt,
+    };
+    const response = await fetch('/api/chat', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'text/event-stream',
+      },
+      body: JSON.stringify(request),
+    });
+    if (!response.body) throw new Error('No response body for SSE');
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let idx;
+      while ((idx = buffer.indexOf('\n')) !== -1) {
+        const line = buffer.slice(0, idx);
+        buffer = buffer.slice(idx + 1);
+        if (line.startsWith('0:')) {
+          // 文本增量
+          try {
+            const payload = JSON.parse(line.slice(2));
+            yield { type: 'text', text: payload.text };
+          } catch {}
+        } else if (line.startsWith('d:')) {
+          // 结束信号
+          return;
+        }
+      }
+    }
+  },
 }; 
