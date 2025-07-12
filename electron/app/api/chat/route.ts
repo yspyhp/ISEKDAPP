@@ -35,8 +35,19 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(data);
   } catch (error) {
     console.error('Chat API GET error:', error);
+    
+    // Provide more detailed error information
+    let errorMessage = 'Internal server error';
+    if (error instanceof SyntaxError) {
+      errorMessage = 'Invalid JSON format';
+    } else if (error instanceof TypeError) {
+      errorMessage = 'Type error in request processing';
+    } else if (error instanceof Error) {
+      errorMessage = error.message;
+    }
+    
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: errorMessage, details: error instanceof Error ? error.stack : undefined },
       { status: 500 }
     );
   }
@@ -44,12 +55,49 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
+    // Log request details for debugging
+    const requestContentType = request.headers.get('content-type');
+    console.log('🔧 Request content-type:', requestContentType);
+    
+    // Check if request has a body
+    const contentLength = request.headers.get('content-length');
+    console.log('🔧 Request content-length:', contentLength);
+    
+    let body;
+    try {
+      body = await request.json();
+    } catch (jsonError) {
+      console.error('🔧 JSON parse error:', jsonError);
+      
+      return NextResponse.json(
+        { 
+          error: 'Invalid JSON format in request body',
+          details: jsonError instanceof Error ? jsonError.message : 'Unknown JSON error'
+        },
+        { status: 400 }
+      );
+    }
 
     // Extract session information from the request
     const { sessionId, agentId, messages, system } = body;
     
     console.log('🔧 Frontend API received:', { sessionId, agentId, messagesCount: messages?.length });
+    
+    // Normalize message content to ensure it's always a string
+    const normalizedMessages = messages?.map((msg: any) => {
+      let content = msg.content;
+      if (Array.isArray(content)) {
+        // If content is an array of objects with text fields
+        if (content.length > 0 && typeof content[0] === 'object' && 'text' in content[0]) {
+          content = content.map((c: any) => c.text).join('');
+        } else {
+          content = content.join('');
+        }
+      } else if (typeof content !== 'string') {
+        content = String(content);
+      }
+      return { ...msg, content };
+    }) || [];
     
     // If agentId is not provided in the request body, try to get it from the session
     let finalAgentId = agentId;
@@ -87,7 +135,7 @@ export async function POST(request: NextRequest) {
     const backendRequest = {
       agentId: finalAgentId,
       sessionId,
-      messages,
+      messages: normalizedMessages,
       system
     };
     
@@ -114,27 +162,41 @@ export async function POST(request: NextRequest) {
 
     // Check if backend returned streaming response
     const contentType = response.headers.get('content-type');
+    const dataStreamHeader = response.headers.get('x-vercel-ai-data-stream');
     console.log('🔧 Backend response content-type:', contentType);
+    console.log('🔧 Backend response x-vercel-ai-data-stream:', dataStreamHeader);
     
-    if (contentType && contentType.includes('text/event-stream')) {
-      // Return streaming response
+    if (contentType && (contentType.includes('text/event-stream') || contentType.includes('text/plain')) && dataStreamHeader) {
+      // Return streaming response for assistant-stream format
       const stream = response.body;
       return new Response(stream, {
         headers: {
-          'Content-Type': 'text/event-stream',
+          'Content-Type': 'text/plain; charset=utf-8',
           'Cache-Control': 'no-cache',
           'Connection': 'keep-alive',
+          'x-vercel-ai-data-stream': 'v1',
         },
       });
     } else {
-      // Only parse as JSON if not SSE
+      // Only parse as JSON if not streaming
       const data = await response.json();
       return NextResponse.json(data);
     }
   } catch (error) {
     console.error('Chat API POST error:', error);
+    
+    // Provide more detailed error information
+    let errorMessage = 'Internal server error';
+    if (error instanceof SyntaxError) {
+      errorMessage = 'Invalid JSON format';
+    } else if (error instanceof TypeError) {
+      errorMessage = 'Type error in request processing';
+    } else if (error instanceof Error) {
+      errorMessage = error.message;
+    }
+    
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: errorMessage, details: error instanceof Error ? error.stack : undefined },
       { status: 500 }
     );
   }

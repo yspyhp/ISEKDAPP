@@ -29,6 +29,8 @@ interface SessionProps {
 }
 
 export const Session: FC<SessionProps> = ({ currentSession }) => {
+  console.log('🔧 Session: Rendering session for:', currentSession.id, currentSession.title);
+  
   return (
     <ThreadPrimitive.Root
       className="bg-background box-border flex h-full flex-col overflow-hidden"
@@ -158,6 +160,8 @@ const ComposerAction: FC = () => {
 };
 
 const UserMessage: FC = () => {
+  console.log('🔧 UserMessage: Rendering user message');
+  
   return (
     <MessagePrimitive.Root className="grid auto-rows-auto grid-cols-[minmax(72px,1fr)_auto] gap-y-2 [&:where(>*)]:col-start-2 w-full max-w-[var(--thread-max-width)] py-4">
       <UserActionBar />
@@ -205,6 +209,8 @@ const EditComposer: FC = () => {
 };
 
 const AssistantMessage: FC = () => {
+  console.log('🔧 AssistantMessage: Rendering assistant message');
+  
   return (
     <MessagePrimitive.Root className="grid grid-cols-[auto_auto_1fr] grid-rows-[auto_1fr] relative w-full max-w-[var(--thread-max-width)] py-4">
       <div className="text-foreground max-w-[calc(var(--thread-max-width)*0.8)] break-words leading-7 col-span-2 col-start-2 row-start-1 my-1.5">

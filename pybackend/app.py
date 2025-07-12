@@ -7,7 +7,7 @@ ISEK Node Client - Connect to local ISEK node
 import os
 import requests
 import uuid
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, Response, stream_with_context
 from flask_cors import CORS
 from datetime import datetime
 
@@ -245,11 +245,33 @@ def chat():
     accept_header = request.headers.get('Accept', '')
     if 'text/event-stream' in accept_header:
         import json
-        response = app.response_class(
-            response=f"{json.dumps(response_data)}\n",
-            status=200,
-            mimetype='text/event-stream'
-        )
+        from flask import Response, stream_with_context
+        def generate():
+            # Use assistant-stream protocol format with type:json format
+            # Type "0" = TextDelta for text content
+            content = response_data["content"]
+            # Split content into chunks for streaming effect
+            words = content.split()
+            for i, word in enumerate(words):
+                # TextDelta should send the text directly, not wrapped in an object
+                text_chunk = word + (" " if i < len(words) - 1 else "")
+                yield f'0:{json.dumps(text_chunk)}\n'
+                import time
+                time.sleep(0.1)  # Simulate streaming delay
+            
+            # Type "d" = FinishMessage to end the stream
+            finish_data = {
+                "finishReason": "stop",
+                "usage": {
+                    "promptTokens": 0,
+                    "completionTokens": len(words)
+                }
+            }
+            yield f'd:{json.dumps(finish_data)}\n'
+        response = Response(stream_with_context(generate()), mimetype='text/plain; charset=utf-8')
+        response.headers['Cache-Control'] = 'no-cache'
+        response.headers['Connection'] = 'keep-alive'
+        response.headers['x-vercel-ai-data-stream'] = 'v1'
         return response
     else:
         return jsonify(response_data)

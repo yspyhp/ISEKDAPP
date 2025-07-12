@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
 import { Search, Sparkles, User } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 interface AgentSelectorProps {
   onAgentSelect: (agent: AIAgent) => void;
@@ -83,13 +84,12 @@ export function AgentSelector({ onAgentSelect, onCancel }: AgentSelectorProps) {
   }
 
   return (
-    <div className="p-4 space-y-4">
-      <div className="flex items-center space-x-2">
+    <div className="p-4 flex flex-col h-full">
+      <div className="flex items-center space-x-2 mb-4">
         <Sparkles className="h-5 w-5 text-blue-500" />
         <h3 className="text-lg font-semibold">选择智能体</h3>
       </div>
-      
-      <div className="relative">
+      <div className="relative mb-4">
         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
         <Input
           placeholder="搜索智能体..."
@@ -98,10 +98,8 @@ export function AgentSelector({ onAgentSelect, onCancel }: AgentSelectorProps) {
           className="pl-10"
         />
       </div>
-
-      <Separator />
-
-      <div className="space-y-2 max-h-64 overflow-y-auto">
+      <Separator className="mb-4" />
+      <div className="flex-1 min-h-0 overflow-y-auto space-y-2">
         {filteredAgents.length === 0 ? (
           <div className="text-center py-8">
             <User className="h-12 w-12 text-gray-300 mx-auto mb-2" />
@@ -111,37 +109,53 @@ export function AgentSelector({ onAgentSelect, onCancel }: AgentSelectorProps) {
           </div>
         ) : (
           filteredAgents.map((agent) => (
-            <div
-              key={agent.id}
-              className="p-3 border rounded-lg hover:bg-gray-50 cursor-pointer transition-colors"
-              onClick={() => onAgentSelect(agent)}
-            >
-              <div className="flex items-start space-x-3">
-                <div className="flex-shrink-0">
-                  <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-                    <Sparkles className="h-5 w-5 text-blue-600" />
+            <Tooltip key={agent.id}>
+              <TooltipTrigger asChild>
+                <div
+                  className="p-3 border rounded-lg hover:bg-gray-50 cursor-pointer transition-colors"
+                  onClick={() => onAgentSelect(agent)}
+                >
+                  <div className="flex items-start space-x-3">
+                    <div className="flex-shrink-0">
+                      <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
+                        <Sparkles className="h-5 w-5 text-blue-600" />
+                      </div>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h4 className="text-sm font-medium text-gray-900 truncate">
+                        {agent.name}
+                      </h4>
+                      <p className="text-sm text-gray-500 mt-1 line-clamp-2">
+                        {agent.description}
+                      </p>
+                      <p className="text-xs text-gray-400 mt-1 truncate">
+                        {agent.address}
+                      </p>
+                    </div>
                   </div>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <h4 className="text-sm font-medium text-gray-900 truncate">
-                    {agent.name}
-                  </h4>
-                  <p className="text-sm text-gray-500 mt-1 line-clamp-2">
-                    {agent.description}
-                  </p>
-                  <p className="text-xs text-gray-400 mt-1 truncate">
-                    {agent.address}
-                  </p>
+              </TooltipTrigger>
+              <TooltipContent side="right" className="max-w-sm p-4 rounded-xl shadow-lg bg-white dark:bg-neutral-900">
+                <div className="space-y-1">
+                  <div className="font-semibold text-base text-gray-900 dark:text-white">{agent.name}</div>
+                  <div className="text-sm text-gray-500 dark:text-gray-300">{agent.description}</div>
+                  {agent.capabilities && agent.capabilities.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-2">
+                      {agent.capabilities.map(cap => (
+                        <span key={cap} className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs">{cap}</span>
+                      ))}
+                    </div>
+                  )}
+                  <div className="text-xs text-gray-400 mt-1">模型: {agent.model}</div>
+                  <div className="text-xs text-gray-400">地址: {agent.address}</div>
                 </div>
-              </div>
-            </div>
+              </TooltipContent>
+            </Tooltip>
           ))
         )}
       </div>
-
-      <Separator />
-
-      <div className="flex space-x-2">
+      <Separator className="my-4" />
+      <div className="flex space-x-2 flex-none">
         <Button onClick={onCancel} variant="outline" className="flex-1">
           取消
         </Button>
