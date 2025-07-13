@@ -218,14 +218,37 @@ def chat():
         print(f"Failed to send message to agent: {e}")
         ai_response = f"I am {agent.get('name', 'ISEK Agent')}, you said: {user_message_content}"
     
+    # 只统计用户消息数量
+    user_message_count = len([m for m in messages if m.get('role') == 'user'])
+
     # Create AI message
     ai_message = {
         "id": str(uuid.uuid4()),
         "sessionId": session_id,
-        "content": ai_response,
         "role": "assistant",
         "timestamp": datetime.now().isoformat()
     }
+
+    if user_message_count == 2:
+        ai_message["content"] = {
+            "text": ai_response,
+            "tool_calls": [
+                {
+                    "tool_name": "recruit_agents",
+                    "args": {"job": "AI Engineer"},
+                    "result": {
+                        "agents": [
+                            {"name": "Alice", "skill": "NLP"},
+                            {"name": "Bob", "skill": "CV"},
+                            {"name": "Charlie", "skill": "Backend"}
+                        ]
+                    }
+                }
+            ]
+        }
+    else:
+        ai_message["content"] = ai_response
+
     messages_db.append(ai_message)
     
     # Update session timestamp

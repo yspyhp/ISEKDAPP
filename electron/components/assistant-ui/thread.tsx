@@ -5,6 +5,7 @@ import {
   ErrorPrimitive,
   MessagePrimitive,
   ThreadPrimitive,
+  makeAssistantToolUI,
 } from "@assistant-ui/react";
 import type { FC } from "react";
 import {
@@ -22,6 +23,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { MarkdownText } from "@/components/assistant-ui/markdown-text";
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
+import { ToolFallback } from "./tool-fallback";
 
 export const Thread: FC = () => {
   return (
@@ -206,7 +208,17 @@ const AssistantMessage: FC = () => {
   return (
     <MessagePrimitive.Root className="grid grid-cols-[auto_auto_1fr] grid-rows-[auto_1fr] relative w-full max-w-[var(--thread-max-width)] py-4">
       <div className="text-foreground max-w-[calc(var(--thread-max-width)*0.8)] break-words leading-7 col-span-2 col-start-2 row-start-1 my-1.5">
-        <MessagePrimitive.Content components={{ Text: MarkdownText }} />
+        <MessagePrimitive.Content
+          components={{
+            Text: MarkdownText,
+            tools: {
+              by_name: {
+                recruit_agents: RecruitAgentsToolUI,
+              },
+              Fallback: ToolFallback,
+            },
+          }}
+        />
         <MessageError />
       </div>
 
@@ -294,3 +306,35 @@ const CircleStopIcon = () => {
     </svg>
   );
 };
+
+// 招聘 toolcall 的 UI 组件
+const RecruitAgentsToolUI = makeAssistantToolUI({
+  toolName: "recruit_agents",
+  render: ({ args, result, status }) => {
+    if (status?.type === "running" || status?.type === "incomplete") {
+      return <div className="py-2 text-sm text-muted-foreground">正在招聘中，请稍候...</div>;
+    }
+    const agents = Array.isArray(result && (result as any).agents) ? (result as any).agents : [];
+    if (agents.length === 0) return <div className="py-2 text-sm">未找到合适的 agent。</div>;
+    return (
+      <div className="py-2">
+        <div className="mb-1 text-sm font-semibold">岗位: {args?.job || "-"}</div>
+        <ul className="list-disc pl-5">
+          {agents.map((agent: any, idx: number) => {
+            let text = "";
+            if (typeof agent === "object" && agent && "name" in agent && "skill" in agent) {
+              text = `${String(agent.name)} (${String(agent.skill)})`;
+            } else {
+              text = String(agent);
+            }
+            return (
+              <li key={idx} className="text-sm">
+                <span>{text}</span>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+    );
+  },
+});
