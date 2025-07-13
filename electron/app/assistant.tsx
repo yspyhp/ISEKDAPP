@@ -18,8 +18,13 @@ export const Assistant = () => {
     agentsApi.getAgents().then(setAgents);
   }, []);
 
-  // 可选：新建/删除会话后刷新
+  // 新建/删除会话后刷新
   const handleSessionCreated = () => {
+    sessionsApi.getSessions().then(setSessions);
+  };
+
+  // 发送消息后刷新会话列表，保证侧边栏及时更新
+  const handleMessageSent = () => {
     sessionsApi.getSessions().then(setSessions);
   };
 
@@ -34,7 +39,7 @@ export const Assistant = () => {
       />
       <SidebarInset>
         {currentSession && (
-          <MyRuntimeProvider session={currentSession}>
+          <MyRuntimeProvider session={currentSession} onMessageSent={handleMessageSent}>
             <Thread />
           </MyRuntimeProvider>
         )}

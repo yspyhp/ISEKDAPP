@@ -8,9 +8,11 @@ import { ChatSession } from "@/lib/types";
 export function MyRuntimeProvider({
   session,
   children,
+  onMessageSent,
 }: {
   session: ChatSession;
   children: ReactNode;
+  onMessageSent?: () => void;
 }) {
   const [messages, setMessages] = useState<ThreadMessageLike[]>([]);
   const [loading, setLoading] = useState(true);
@@ -70,7 +72,8 @@ export function MyRuntimeProvider({
         });
       }
     }
-    // 不需要本地保存，后端已自动处理
+    // 消息发送后通知父组件刷新 sessions
+    if (onMessageSent) onMessageSent();
   };
 
   const runtime = useExternalStoreRuntime<ThreadMessageLike>({

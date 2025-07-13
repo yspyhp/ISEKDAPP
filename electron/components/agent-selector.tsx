@@ -112,29 +112,25 @@ export function AgentSelector({ onAgentSelect, onCancel }: AgentSelectorProps) {
             <Tooltip key={agent.id}>
               <TooltipTrigger asChild>
                 <div
-                  className="p-3 border rounded-lg hover:bg-gray-50 cursor-pointer transition-colors"
+                  className="p-3 border rounded-lg hover:bg-gray-50 cursor-pointer transition-colors flex items-center gap-3"
                   onClick={() => onAgentSelect(agent)}
                 >
-                  <div className="flex items-start space-x-3">
-                    <div className="flex-shrink-0">
-                      <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-                        <Sparkles className="h-5 w-5 text-blue-600" />
-                      </div>
+                  <div className="flex-shrink-0">
+                    <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
+                      <Sparkles className="h-5 w-5 text-blue-600" />
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <h4 className="text-sm font-medium text-gray-900 truncate">
-                        {agent.name}
-                      </h4>
-                      <p className="text-sm text-gray-500 mt-1 line-clamp-2">
-                        {agent.description}
-                      </p>
-                      <p className="text-xs text-gray-400 mt-1 truncate">
-                        {agent.address}
-                      </p>
-                    </div>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h4 className="text-sm font-medium text-gray-900 truncate">
+                      {agent.name}
+                    </h4>
+                    <p className="text-xs text-gray-400 truncate mt-1">
+                      {agent.address}
+                    </p>
                   </div>
                 </div>
               </TooltipTrigger>
+              {/* 保留 tooltip 展示详细信息 */}
               <TooltipContent side="right" className="max-w-sm p-4 rounded-xl shadow-lg bg-white dark:bg-neutral-900">
                 <div className="space-y-1">
                   <div className="font-semibold text-base text-gray-900 dark:text-white">{agent.name}</div>
