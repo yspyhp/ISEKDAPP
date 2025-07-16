@@ -1,30 +1,8 @@
-import { makeAssistantToolUI } from "@assistant-ui/react";
+import { makeAssistantTool, makeAssistantToolUI } from "@assistant-ui/react";
 import { useState } from "react";
 
-// 小队组建工具输入类型
-type TeamFormationInput = {
-  task: string;
-  requiredRoles: string[];
-  status: "starting" | "recruiting" | "completed";
-  progress: number;
-  currentStep: string;
-  members: Array<{
-    name: string;
-    role: string;
-    skill: string;
-    experience: string;
-    avatar: string;
-    description: string;
-  }>;
-  teamStats?: {
-    totalMembers: number;
-    avgExperience: string;
-    skills: string[];
-  };
-};
-
 // 成员卡片组件
-const MemberCard = ({ member, index }: { member: any; index: number }) => {
+const MemberCard = ({ member }: { member: any }) => {
   const [isHovered, setIsHovered] = useState(false);
 
   return (
@@ -68,9 +46,48 @@ const MemberCard = ({ member, index }: { member: any; index: number }) => {
   );
 };
 
-export const { ToolUI, toolUIComponents } = makeAssistantToolUI({
-  "team-formation": ({ input }: { input: TeamFormationInput }) => {
-    const { task, status, progress, currentStep, members, teamStats } = input;
+// 简化的工具参数定义（不使用zod）
+const teamFormationSchema = {
+  type: "object",
+  properties: {
+    task: { type: "string", description: "任务名称" },
+    requiredRoles: { type: "array", items: { type: "string" }, description: "需要的角色列表" },
+    status: { type: "string", enum: ["starting", "recruiting", "completed"], description: "状态" },
+    progress: { type: "number", minimum: 0, maximum: 1, description: "进度" },
+    currentStep: { type: "string", description: "当前步骤" },
+    members: { 
+      type: "array", 
+      items: {
+        type: "object",
+        properties: {
+          name: { type: "string" },
+          role: { type: "string" },
+          skill: { type: "string" },
+          experience: { type: "string" },
+          avatar: { type: "string" },
+          description: { type: "string" }
+        }
+      },
+      description: "团队成员" 
+    },
+    teamStats: {
+      type: "object",
+      properties: {
+        totalMembers: { type: "number" },
+        avgExperience: { type: "string" },
+        skills: { type: "array", items: { type: "string" } }
+      },
+      description: "团队统计"
+    }
+  }
+};
+
+// 创建工具UI
+export const TeamFormationToolUI = makeAssistantToolUI({
+  toolName: "team-formation",
+  render: ({ args, status }) => {
+    const { task, progress = 0, currentStep = "", members = [], teamStats } = args || {};
+    const toolStatus = args?.status || status?.type || "starting";
 
     return (
       <div className="w-full max-w-2xl mx-auto my-4 p-4 border rounded-lg bg-muted">
@@ -78,7 +95,7 @@ export const { ToolUI, toolUIComponents } = makeAssistantToolUI({
         <div className="mb-4">
           <div className="flex items-center gap-2 mb-2">
             <span className="text-xl">🚀</span>
-            <h3 className="text-lg font-semibold">{task}</h3>
+            <h3 className="text-lg font-semibold">{task || "AI项目开发小队"}</h3>
           </div>
           
           {/* 进度条 */}
@@ -97,13 +114,13 @@ export const { ToolUI, toolUIComponents } = makeAssistantToolUI({
 
         {/* 状态指示器 */}
         <div className="flex items-center gap-2 mb-4">
-          {status === "recruiting" && (
+          {toolStatus === "recruiting" && (
             <>
               <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
               <span className="text-sm text-blue-600">正在招募中...</span>
             </>
           )}
-          {status === "completed" && (
+          {toolStatus === "completed" && (
             <>
               <div className="w-2 h-2 bg-green-500 rounded-full"></div>
               <span className="text-sm text-green-600">组建完成</span>
@@ -119,7 +136,7 @@ export const { ToolUI, toolUIComponents } = makeAssistantToolUI({
                 <span>👥</span>
                 小队成员 ({members.length}人)
               </h4>
-              {status === "recruiting" && (
+              {toolStatus === "recruiting" && (
                 <div className="text-xs text-muted-foreground">
                   {`${members.length}/4 已招募`}
                 </div>
@@ -127,15 +144,15 @@ export const { ToolUI, toolUIComponents } = makeAssistantToolUI({
             </div>
             
             <div className="grid grid-cols-1 gap-2">
-              {members.map((member, idx) => (
-                <MemberCard key={idx} member={member} index={idx} />
+              {members.map((member: any, idx: number) => (
+                <MemberCard key={idx} member={member} />
               ))}
             </div>
           </div>
         )}
 
         {/* 小队统计（完成后显示） */}
-        {status === "completed" && teamStats && (
+        {toolStatus === "completed" && teamStats && (
           <div className="mt-4 p-3 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
             <div className="text-sm font-medium text-green-800 dark:text-green-200 mb-2">
               ✅ 小队组建成功！
@@ -158,5 +175,19 @@ export const { ToolUI, toolUIComponents } = makeAssistantToolUI({
         )}
       </div>
     );
-  },
+  }
+});
+
+// 注册工具
+export const TeamFormationTool = makeAssistantTool({
+  toolName: "team-formation",
+  description: "组建AI项目开发小队",
+  parameters: teamFormationSchema,
+  execute: async (args) => {
+    // 这里是前端工具，实际执行由后端streaming提供
+    return {
+      success: true,
+      message: "小队组建完成"
+    };
+  }
 });

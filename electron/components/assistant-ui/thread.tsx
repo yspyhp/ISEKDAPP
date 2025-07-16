@@ -27,7 +27,6 @@ import { MarkdownText } from "@/components/assistant-ui/markdown-text";
 import React from "react";
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
 import { ToolFallback } from "./tool-fallback";
-import { ToolUI } from "./tool-ui";
 
 export const Thread: FC = () => {
   return (
@@ -221,9 +220,6 @@ const AssistantMessage: FC = () => {
           components={{
             Text: MarkdownText,
             tools: {
-              by_name: {
-                "team-formation": ToolUI,
-              },
               Fallback: ToolFallback,
             },
           }}

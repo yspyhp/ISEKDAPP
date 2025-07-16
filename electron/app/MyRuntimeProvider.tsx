@@ -4,6 +4,7 @@ import { AssistantRuntimeProvider, useExternalStoreRuntime, ThreadMessageLike, A
 import { ReactNode, useEffect, useState } from "react";
 import { chatApi, messagesApi } from "@/lib/api";
 import { ChatSession } from "@/lib/types";
+import { TeamFormationToolUI } from "@/components/assistant-ui/tool-ui";
 
 // 工具调用更新函数
 function updateToolCall(content: any[], newToolCall: any) {
@@ -222,6 +223,7 @@ export function MyRuntimeProvider({
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>
+      <TeamFormationToolUI />
       {children}
     </AssistantRuntimeProvider>
   );
