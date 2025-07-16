@@ -5,10 +5,7 @@ import {
   ErrorPrimitive,
   MessagePrimitive,
   ThreadPrimitive,
-  makeAssistantToolUI
 } from "@assistant-ui/react";
-import { RSCDisplay } from "@assistant-ui/react-ai-sdk";
-
 import type { FC } from "react";
 import {
   ArrowDownIcon,
@@ -24,10 +21,7 @@ import { cn } from "@/lib/utils";
 
 import { Button } from "@/components/ui/button";
 import { MarkdownText } from "@/components/assistant-ui/markdown-text";
-import React from "react";
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
-import { ToolFallback } from "./tool-fallback";
-import { ToolUI } from "./tool-ui";
 
 export const Thread: FC = () => {
   return (
@@ -37,27 +31,26 @@ export const Thread: FC = () => {
         ["--thread-max-width" as string]: "42rem",
       }}
     >
-      <div className="flex h-full flex-col">
-        <ThreadPrimitive.Viewport className="flex-1 flex flex-col items-center overflow-y-auto scroll-smooth bg-inherit px-4 pt-8">
-          <ThreadWelcome />
+      <ThreadPrimitive.Viewport className="flex h-full flex-col items-center overflow-y-scroll scroll-smooth bg-inherit px-4 pt-8">
+        <ThreadWelcome />
 
-          <ThreadPrimitive.Messages
-            components={{
-              UserMessage: UserMessage,
-              EditComposer: EditComposer,
-              AssistantMessage: AssistantMessage,
-            }}
-          />
+        <ThreadPrimitive.Messages
+          components={{
+            UserMessage: UserMessage,
+            EditComposer: EditComposer,
+            AssistantMessage: AssistantMessage,
+          }}
+        />
 
-          <ThreadPrimitive.If empty={false}>
-            <div className="min-h-8 flex-grow" />
-          </ThreadPrimitive.If>
-        </ThreadPrimitive.Viewport>
-        <div className="sticky bottom-0 z-10 mt-3 flex w-full max-w-[var(--thread-max-width)] flex-col items-center justify-end rounded-t-lg bg-inherit pb-4 mx-auto">
+        <ThreadPrimitive.If empty={false}>
+          <div className="min-h-8 flex-grow" />
+        </ThreadPrimitive.If>
+
+        <div className="sticky bottom-0 mt-3 flex w-full max-w-[var(--thread-max-width)] flex-col items-center justify-end rounded-t-lg bg-inherit pb-4">
           <ThreadScrollToBottom />
           <Composer />
         </div>
-      </div>
+      </ThreadPrimitive.Viewport>
     </ThreadPrimitive.Root>
   );
 };
@@ -208,29 +201,16 @@ const EditComposer: FC = () => {
   );
 };
 
-
-
-
-
-
 const AssistantMessage: FC = () => {
   return (
     <MessagePrimitive.Root className="grid grid-cols-[auto_auto_1fr] grid-rows-[auto_1fr] relative w-full max-w-[var(--thread-max-width)] py-4">
       <div className="text-foreground max-w-[calc(var(--thread-max-width)*0.8)] break-words leading-7 col-span-2 col-start-2 row-start-1 my-1.5">
-        <MessagePrimitive.Content
-          components={{
-            Text: MarkdownText,
-            tools: {
-              by_name: {
-                "team-formation": ToolUI,
-              },
-              Fallback: ToolFallback,
-            },
-          }}
-        />
+        <MessagePrimitive.Content components={{ Text: MarkdownText }} />
         <MessageError />
       </div>
+
       <AssistantActionBar />
+
       <BranchPicker className="col-start-2 row-start-2 -ml-2 mr-2" />
     </MessagePrimitive.Root>
   );
@@ -313,4 +293,3 @@ const CircleStopIcon = () => {
     </svg>
   );
 };
-

@@ -160,10 +160,19 @@ export const chatApi = {
         const line = buffer.slice(0, idx);
         buffer = buffer.slice(idx + 1);
         if (line.startsWith('0:')) {
-          // 文本增量
+          // 文本增量或工具调用
           try {
             const payload = JSON.parse(line.slice(2));
-            yield { type: 'text', text: payload.text };
+            if (payload.type === 'text') {
+              yield { type: 'text', text: payload.text };
+            } else if (payload.type === 'tool-call') {
+              yield { 
+                type: 'tool-call', 
+                toolCallId: payload.toolCallId,
+                toolName: payload.toolName,
+                args: payload.args
+              };
+            }
           } catch {}
         } else if (line.startsWith('d:')) {
           // 结束信号
