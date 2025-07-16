@@ -171,3 +171,4 @@ app/build/
 # Temporary files
 tmp/
 temp/
+*.db
