@@ -12,17 +12,17 @@ class TaskStatus(Enum):
 @dataclass
 class Session:
     """会话数据模型"""
-    id: Optional[int] = None
+    id: Optional[str] = None
     title: str = ""
-    agent_id: int = 0
-    agent_name: str = ""
-    agent_description: str = ""
-    agent_address: str = ""
-    created_at: str = datetime.now().isoformat()
-    updated_at: str = datetime.now().isoformat()
-    message_count: int = 0
-    creator_id: int = 0
-    updater_id: int = 0
+    agentId: str = ""
+    agentName: str = ""
+    agentDescription: str = ""
+    agentAddress: str = ""
+    createdAt: str = datetime.now().isoformat()
+    updatedAt: str = datetime.now().isoformat()
+    messageCount: int = 0
+    creatorId: str = ""
+    updaterId: str = ""
     
     @classmethod
     def from_dict(cls, data: dict):
@@ -32,12 +32,12 @@ class Session:
 @dataclass
 class Message:
     """消息数据模型"""
-    id: Optional[int] = None
-    session_id: int = 0
+    id: Optional[str] = None
+    sessionId: str = ""
     content: str = ""
     role: str = ""  # user/assistant
     timestamp: str = datetime.now().isoformat()
-    creator_id: int = 0
+    creatorId: str = ""
     
     @classmethod
     def from_dict(cls, data: dict):
@@ -47,16 +47,16 @@ class Message:
 @dataclass
 class Task:
     """任务数据模型"""
-    id: Optional[int] = None
-    session_id: int = 0
+    id: Optional[str] = None
+    sessionId: str = ""
     title: str = ""
     description: str = ""
     status: TaskStatus = TaskStatus.INIT
     progress: int = 0
-    created_at: str = datetime.now().isoformat()
-    updated_at: str = datetime.now().isoformat()
-    creator_id: int = 0
-    updater_id: int = 0
+    createdAt: str = datetime.now().isoformat()
+    updatedAt: str = datetime.now().isoformat()
+    creatorId: str = ""
+    updaterId: str = ""
     result: str = ""
     
     @classmethod

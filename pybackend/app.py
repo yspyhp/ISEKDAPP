@@ -11,14 +11,16 @@ from flask_cors import CORS
 from datetime import datetime
 import asyncio
 from isek_client import isek_client
+from service import sessionService
+from mapper.models import Session, Message
 
 app = Flask(__name__)
 CORS(app)
 
 ISEK_NODE_URL = os.getenv('ISEK_NODE_URL', 'http://localhost:8000')
 
-sessions_db = []
-messages_db = []
+# sessions_db = []
+# messages_db = []
 
 # --- 格式化函数 ---
 def format_agent(agent):
@@ -92,11 +94,11 @@ def get_network_status():
 def get_sessions():
     """Get all chat sessions"""
     sessions_with_count = []
-    for session in sessions_db:
-        message_count = len([m for m in messages_db if m["sessionId"] == session["id"]])
-        session_copy = session.copy()
-        session_copy["messageCount"] = message_count
-        sessions_with_count.append(session_copy)
+    for session in sessionService.get_user_sessions(creator_id=isek_client.mock_user_id):
+        messages = sessionService.get_session_messages(session_id=session.id, creator_id=isek_client.mock_user_id)
+        message_count = len(messages)
+        session.messageCount = message_count
+        sessions_with_count.append(session)
     return jsonify(sessions_with_count)
 
 @app.route('/api/sessions', methods=['POST'])
@@ -114,8 +116,8 @@ def create_session():
     except Exception as e:
         print(f"Failed to get agent info: {e}")
         return jsonify({"error": "Agent not found"}), 404
-    
-    session = {
+
+    session = Session.from_dict({
         "id": str(uuid.uuid4()),
         "title": title or f"Chat with {agent['name']}",
         "agentId": agent_id,
@@ -124,23 +126,23 @@ def create_session():
         "agentAddress": agent['address'],
         "createdAt": datetime.now().isoformat(),
         "updatedAt": datetime.now().isoformat(),
-        "messageCount": 0
-    }
-    sessions_db.append(session)
+        "messageCount": 0,
+        "creatorId": isek_client.mock_user_id,
+        "updaterId": isek_client.mock_user_id,
+    })
+    sessionService.create_session(session)
     return jsonify(session), 201
 
 @app.route('/api/sessions/<session_id>', methods=['DELETE'])
 def delete_session(session_id):
     """Delete chat session"""
-    global sessions_db, messages_db
-    sessions_db = [s for s in sessions_db if s["id"] != session_id]
-    messages_db = [m for m in messages_db if m["sessionId"] != session_id]
+    sessionService.delete_session(session_id=session_id, creator_id=isek_client.mock_user_id)
     return jsonify({"message": "Session deleted successfully"})
 
 @app.route('/api/sessions/<session_id>/messages', methods=['GET'])
 def get_messages(session_id):
     """Get all messages in session"""
-    messages = [m for m in messages_db if m["sessionId"] == session_id]
+    messages = sessionService.get_session_messages(session_id=session_id, creator_id=isek_client.mock_user_id)
     return jsonify(messages)
 
 @app.route('/api/sessions/<session_id>/messages', methods=['POST'])
@@ -153,20 +155,21 @@ def create_message(session_id):
     if not content:
         return jsonify({"error": "content is required"}), 400
     
-    session = next((s for s in sessions_db if s["id"] == session_id), None)
+    session = sessionService.get_session_by_id(session_id=session_id, creator_id=isek_client.mock_user_id)
     if not session:
         return jsonify({"error": "Session not found"}), 404
     
-    message = {
+    message = Message.from_dict({
         "id": str(uuid.uuid4()),
         "sessionId": session_id,
         "content": content,
         "role": role,
-        "timestamp": datetime.now().isoformat()
-    }
-    messages_db.append(message)
-    
-    session["updatedAt"] = datetime.now().isoformat()
+        "timestamp": datetime.now().isoformat(),
+        "creatorId": isek_client.mock_user_id
+    })
+    sessionService.create_message(message, creator_id=isek_client.mock_user_id)
+
+    session.updatedAt = datetime.now().isoformat()
     
     return jsonify(message), 201
 
@@ -178,7 +181,7 @@ def chat():
             session_id = request.args.get('sessionId')
             if not session_id:
                 return jsonify({"error": "sessionId is required"}), 400
-            messages = [m for m in messages_db if m["sessionId"] == session_id]
+            messages = sessionService.get_session_messages(session_id=session_id, creator_id=isek_client.mock_user_id)
             return jsonify(messages)
         
         data = request.get_json()
@@ -202,16 +205,17 @@ def chat():
                 user_message_content = str(user_message_content)
         elif not isinstance(user_message_content, str):
             user_message_content = str(user_message_content)
-        
-        user_message = {
+
+        user_message = Message.from_dict({
             "id": str(uuid.uuid4()),
             "sessionId": session_id,
             "content": user_message_content,
             "role": "user",
-            "timestamp": datetime.now().isoformat()
-        }
-        messages_db.append(user_message)
-        
+            "timestamp": datetime.now().isoformat(),
+            "creatorId": isek_client.mock_user_id
+        })
+        sessionService.create_message(message=user_message, creator_id=isek_client.mock_user_id)
+
         ai_response = asyncio.run(isek_client.send_message_to_agent(agent_id, messages, system, session_id))
         
         ai_message = {
@@ -219,7 +223,8 @@ def chat():
             "sessionId": session_id,
             "role": "assistant",
             "timestamp": datetime.now().isoformat(),
-            "content": ai_response
+            "content": ai_response,
+            "creatorId": agent_id
         }
 
         user_content = user_message_content.lower()
@@ -237,20 +242,22 @@ def chat():
             ai_message["content"] = [
                 {"type": "text", "text": ai_response}
             ]
-
-        messages_db.append(ai_message)
+        # todo message add tool
+        sessionService.create_message(Message.from_dict(ai_message), creator_id=agent_id)
+        # messages_db.append(ai_message)
         
-        session = next((s for s in sessions_db if s["id"] == session_id), None)
+        # session = next((s for s in sessions_db if s["id"] == session_id), None)
+        session = sessionService.get_session_by_id(session_id=session_id, creator_id=isek_client.mock_user_id)
         if session:
-            session["updatedAt"] = datetime.now().isoformat()
+            session.updatedAt = datetime.now().isoformat()
         
         response_data = {
             "aiMessage": ai_message,
             "userMessage": {
-                "id": user_message["id"],
-                "role": user_message["role"],
-                "content": user_message["content"],
-                "timestamp": user_message["timestamp"]
+                "id": user_message.id,
+                "role": user_message.role,
+                "content": user_message.content,
+                "timestamp": user_message.timestamp
             },
             "agent": {
                 "id": agent_id
@@ -419,8 +426,8 @@ def health_check():
     return jsonify({
         "status": "healthy",
         "timestamp": datetime.now().isoformat(),
-        "sessions_count": len(sessions_db),
-        "messages_count": len(messages_db),
+        "sessions_count": len(sessionService.get_user_sessions(isek_client.mock_user_id)),
+        "messages_count": len(sessionService.get_user_sessions(isek_client.mock_user_id)),
         "isek_node": network_status
     })
 
