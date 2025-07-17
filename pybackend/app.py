@@ -5,28 +5,63 @@ ISEK Node Client - Connect to local ISEK node
 """
 
 import os
-import requests
 import uuid
 from flask import Flask, jsonify, request, Response, stream_with_context
 from flask_cors import CORS
 from datetime import datetime
+import asyncio
+from isek_client import isek_client
 
 app = Flask(__name__)
 CORS(app)
 
 ISEK_NODE_URL = os.getenv('ISEK_NODE_URL', 'http://localhost:8000')
 
-# 内存存储 (生产环境应该用数据库)
 sessions_db = []
 messages_db = []
 
+# --- 格式化函数 ---
+def format_agent(agent):
+    return {
+        "id": agent.get("id", ""),
+        "name": agent.get("name", ""),
+        "description": agent.get("description", ""),
+        "system_prompt": agent.get("system_prompt") or agent.get("systemPrompt", ""),
+        "model": agent.get("model", ""),
+        "address": agent.get("address", ""),
+        "capabilities": agent.get("capabilities", []),
+        "status": agent.get("status", "online")
+    }
+
+def format_chat_response(ai_message, agent_id, session_id, user_id):
+    # ai_message["content"] 可能是字符串或[{type: text, text: ...}]
+    if isinstance(ai_message["content"], str):
+        content = ai_message["content"]
+    elif isinstance(ai_message["content"], list) and ai_message["content"] and isinstance(ai_message["content"][0], dict):
+        content = ai_message["content"][0].get("text", "")
+    else:
+        content = str(ai_message["content"])
+    return {
+        "response": content,
+        "agent_id": agent_id,
+        "session_id": session_id,
+        "user_id": user_id,
+        "timestamp": ai_message["timestamp"]
+    }
+
+def format_network_status(status, agents_count):
+    return {
+        "connected": status == "connected",
+        "agents_count": agents_count,
+        "timestamp": datetime.now().isoformat()
+    }
+
+# --- API 实现 ---
 @app.route('/api/agents', methods=['GET'])
 def get_agents():
     try:
-        resp = requests.get(f"{ISEK_NODE_URL}/agents", timeout=3)
-        resp.raise_for_status()
-        agents = resp.json()
-        return jsonify(agents)
+        agents = asyncio.run(isek_client.discover_agents())
+        return jsonify([format_agent(a) for a in agents])
     except Exception as e:
         print(f"Failed to get agents: {e}")
         return jsonify([]), 500
@@ -34,10 +69,11 @@ def get_agents():
 @app.route('/api/agents/<agent_id>', methods=['GET'])
 def get_agent(agent_id):
     try:
-        resp = requests.get(f"{ISEK_NODE_URL}/agents/{agent_id}", timeout=3)
-        resp.raise_for_status()
-        agent = resp.json()
-        return jsonify(agent)
+        agents = asyncio.run(isek_client.discover_agents())
+        agent = next((a for a in agents if a["id"] == agent_id), None)
+        if agent:
+            return jsonify(format_agent(agent))
+        return jsonify({"error": "Agent not found"}), 404
     except Exception as e:
         print(f"Failed to get agent: {e}")
         return jsonify({"error": "Agent not found"}), 404
@@ -45,10 +81,9 @@ def get_agent(agent_id):
 @app.route('/api/network/status', methods=['GET'])
 def get_network_status():
     try:
-        resp = requests.get(f"{ISEK_NODE_URL}/network/status", timeout=3)
-        resp.raise_for_status()
-        status = resp.json()
-        return jsonify(status)
+        agents = asyncio.run(isek_client.discover_agents())
+        status = "connected"
+        return jsonify(format_network_status(status, len(agents)))
     except Exception as e:
         print(f"Failed to get network status: {e}")
         return jsonify({"error": "Failed to get network status"}), 500
@@ -74,11 +109,8 @@ def create_session():
     if not agent_id:
         return jsonify({"error": "agentId is required"}), 400
     
-    # Get agent information from node
     try:
-        resp = requests.get(f"{ISEK_NODE_URL}/agents/{agent_id}", timeout=3)
-        resp.raise_for_status()
-        agent = resp.json()
+        agent = {"id": agent_id, "name": "Example Agent", "description": "This is a placeholder agent", "address": "http://localhost:8000"}
     except Exception as e:
         print(f"Failed to get agent info: {e}")
         return jsonify({"error": "Agent not found"}), 404
@@ -101,9 +133,7 @@ def create_session():
 def delete_session(session_id):
     """Delete chat session"""
     global sessions_db, messages_db
-    # Delete session
     sessions_db = [s for s in sessions_db if s["id"] != session_id]
-    # Delete related messages
     messages_db = [m for m in messages_db if m["sessionId"] != session_id]
     return jsonify({"message": "Session deleted successfully"})
 
@@ -123,7 +153,6 @@ def create_message(session_id):
     if not content:
         return jsonify({"error": "content is required"}), 400
     
-    # Check if session exists
     session = next((s for s in sessions_db if s["id"] == session_id), None)
     if not session:
         return jsonify({"error": "Session not found"}), 404
@@ -137,7 +166,6 @@ def create_message(session_id):
     }
     messages_db.append(message)
     
-    # Update session timestamp
     session["updatedAt"] = datetime.now().isoformat()
     
     return jsonify(message), 201
@@ -147,16 +175,12 @@ def chat():
     """Chat endpoint - Send message to agent through ISEK node or get message history"""
     try:
         if request.method == 'GET':
-            # GET request: Return message history for the session
             session_id = request.args.get('sessionId')
             if not session_id:
                 return jsonify({"error": "sessionId is required"}), 400
-            
-            # Get messages for the session
             messages = [m for m in messages_db if m["sessionId"] == session_id]
             return jsonify(messages)
         
-        # POST request: Send message to agent
         data = request.get_json()
         agent_id = data.get('agentId')
         session_id = data.get('sessionId')
@@ -169,21 +193,9 @@ def chat():
         if not session_id:
             return jsonify({"error": "sessionId is required"}), 400
         
-        # Get agent information
-        try:
-            resp = requests.get(f"{ISEK_NODE_URL}/agents/{agent_id}", timeout=3)
-            resp.raise_for_status()
-            agent = resp.json()
-        except Exception as e:
-            print(f"Failed to get agent info: {e}")
-            return jsonify({"error": "Agent not found"}), 404
-        
-        # Get user message content and normalize it
         user_message_content = messages[-1]["content"] if messages else ""
         
-        # Handle different message content formats
         if isinstance(user_message_content, list):
-            # If content is an array of objects with text fields
             if all(isinstance(item, dict) and 'text' in item for item in user_message_content):
                 user_message_content = ' '.join(item['text'] for item in user_message_content)
             else:
@@ -191,7 +203,6 @@ def chat():
         elif not isinstance(user_message_content, str):
             user_message_content = str(user_message_content)
         
-        # Save user message to database
         user_message = {
             "id": str(uuid.uuid4()),
             "sessionId": session_id,
@@ -201,39 +212,18 @@ def chat():
         }
         messages_db.append(user_message)
         
-        # Send message to agent through ISEK node
-        try:
-            payload = {
-                "agent_id": agent_id,
-                "session_id": session_id,
-                "user_id": "isek-ui-backend-user-001",
-                "messages": messages,
-                "system_prompt": system or agent.get('system_prompt', '')
-            }
-            
-            resp = requests.post(f"{ISEK_NODE_URL}/chat", json=payload, timeout=10)
-            resp.raise_for_status()
-            result = resp.json()
-            ai_response = result.get("response", "Agent response")
-        except Exception as e:
-            print(f"Failed to send message to agent: {e}")
-            ai_response = f"I am {agent.get('name', 'ISEK Agent')}, you said: {user_message_content}"
+        ai_response = asyncio.run(isek_client.send_message_to_agent(agent_id, messages, system, session_id))
         
-        # 只统计用户消息数量
-        user_message_count = len([m for m in messages if m.get('role') == 'user'])
-
-        # Create AI message
         ai_message = {
             "id": str(uuid.uuid4()),
             "sessionId": session_id,
             "role": "assistant",
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
+            "content": ai_response
         }
 
-        # 根据用户输入触发不同的富组件演示
         user_content = user_message_content.lower()
         if "组队" in user_content or "小队" in user_content or "recruit" in user_content:
-            # 返回 assistant-ui tool 协议的 team-formation 结构
             ai_message["content"] = "正在为您组建小队..."
             ai_message["tool"] = {
                 "type": "team-formation",
@@ -243,11 +233,6 @@ def chat():
                 },
                 "status": "starting"
             }
-        elif "进度" in user_content or "progress" in user_content:
-            # 进度更新场景：使用特殊标记的文本消息
-            ai_message["content"] = [
-                {"type": "text", "text": "当前任务进度如下：\n\n<UI_COMPONENT type=\"progress\" label=\"任务执行进度\" value=\"0.7\" status=\"进行中\" id=\"task-progress\" />"}
-            ]
         else:
             ai_message["content"] = [
                 {"type": "text", "text": ai_response}
@@ -255,14 +240,12 @@ def chat():
 
         messages_db.append(ai_message)
         
-        # Update session timestamp
         session = next((s for s in sessions_db if s["id"] == session_id), None)
         if session:
             session["updatedAt"] = datetime.now().isoformat()
         
-        # --- 修改返回格式为官方 example ---
         response_data = {
-            "aiMessage": ai_message,  # 包含完整的ai_message，包括tool字段
+            "aiMessage": ai_message,
             "userMessage": {
                 "id": user_message["id"],
                 "role": user_message["role"],
@@ -270,11 +253,9 @@ def chat():
                 "timestamp": user_message["timestamp"]
             },
             "agent": {
-                "id": agent.get("id", agent_id),
-                "name": agent.get("name", "Agent")
+                "id": agent_id
             }
         }
-        # 判断前端是否要求流式返回
         accept_header = request.headers.get('Accept', '')
         if 'text/event-stream' in accept_header:
             import json
@@ -282,15 +263,12 @@ def chat():
             
             def generate():
                 import time
-                # 先发送文本内容
                 content = response_data["aiMessage"]["content"]
                 
-                # 处理不同格式的content
                 text_to_send = ""
                 if isinstance(content, str):
                     text_to_send = content
                 elif isinstance(content, list):
-                    # 从列表中提取文本内容
                     for part in content:
                         if isinstance(part, dict) and part.get("type") == "text":
                             text_to_send += part.get("text", "")
@@ -298,22 +276,18 @@ def chat():
                     text_to_send = content.get("text", "")
                 
                 if text_to_send:
-                    # 文本分块发送
                     chunk_size = 3
                     for i in range(0, len(text_to_send), chunk_size):
                         text_chunk = text_to_send[i:i+chunk_size]
                         yield f'0:{{"type":"text","text":{json.dumps(text_chunk)}}}\n'
                         time.sleep(0.04)
                 
-                # 检查是否有tool调用需要发送并模拟渐进式更新
                 if "tool" in response_data["aiMessage"]:
                     tool_data = response_data["aiMessage"]["tool"]
                     
                     if tool_data["type"] == "team-formation":
-                        # 小队组建工具的渐进式更新
                         call_id = f"call_{uuid.uuid4().hex[:8]}"
                         
-                        # 1. 开始组建
                         initial_call = {
                             "type": "tool-call",
                             "toolCallId": call_id,
@@ -329,7 +303,6 @@ def chat():
                         yield f'0:{json.dumps(initial_call)}\n'
                         time.sleep(1)
                         
-                        # 2. 渐进式添加成员
                         members = [
                             {
                                 "name": "Magic Image Agent",
@@ -386,7 +359,6 @@ def chat():
                             yield f'0:{json.dumps(update_call)}\n'
                             time.sleep(0.8)
                         
-                        # 3. 完成组建
                         final_call = {
                             "type": "tool-call",
                             "toolCallId": call_id,
@@ -406,7 +378,6 @@ def chat():
                         }
                         yield f'0:{json.dumps(final_call)}\n'
                     else:
-                        # 其他工具的常规处理
                         tool_call = {
                             "type": "tool-call",
                             "toolCallId": f"call_{uuid.uuid4().hex[:8]}",
@@ -441,8 +412,7 @@ def chat():
 def health_check():
     """Health check endpoint"""
     try:
-        resp = requests.get(f"{ISEK_NODE_URL}/network/status", timeout=3)
-        network_status = resp.json() if resp.status_code == 200 else {"status": "disconnected"}
+        network_status = {"status": "connected"}
     except:
         network_status = {"status": "disconnected"}
     
@@ -454,7 +424,6 @@ def health_check():
         "isek_node": network_status
     })
 
-# Error handling
 @app.errorhandler(404)
 def not_found(error):
     return jsonify({"error": "Not found"}), 404
