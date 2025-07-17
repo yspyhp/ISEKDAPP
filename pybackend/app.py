@@ -331,10 +331,38 @@ def chat():
                         
                         # 2. 渐进式添加成员
                         members = [
-                            {"name": "Alice Chen", "role": "项目经理", "skill": "敏捷项目管理", "experience": "5年", "avatar": "👩‍💼", "description": "擅长跨团队协作，有丰富的AI项目管理经验"},
-                            {"name": "Bob Wilson", "role": "工程师", "skill": "Python/机器学习", "experience": "4年", "avatar": "👨‍💻", "description": "精通深度学习框架，有多个ML项目实战经验"},
-                            {"name": "Carol Zhang", "role": "前端开发", "skill": "React/TypeScript", "experience": "3年", "avatar": "👩‍💻", "description": "专注于用户体验设计，精通现代前端技术栈"},
-                            {"name": "David Kim", "role": "数据科学家", "skill": "数据分析/建模", "experience": "4年", "avatar": "👨‍🔬", "description": "擅长大数据处理和统计建模，有金融和医疗行业经验"}
+                            {
+                                "name": "Magic Image Agent",
+                                "role": "图像生成",
+                                "skill": "AI图片创作",
+                                "experience": "2年",
+                                "avatar": "🖼️",
+                                "description": "根据文本描述生成高质量图片，支持风格化和多场景渲染"
+                            },
+                            {
+                                "name": "Data Insight Agent",
+                                "role": "数据分析",
+                                "skill": "自动化数据洞察",
+                                "experience": "3年",
+                                "avatar": "📊",
+                                "description": "擅长大数据分析、趋势预测和可视化报告"
+                            },
+                            {
+                                "name": "Smart QA Agent",
+                                "role": "智能问答",
+                                "skill": "知识检索/FAQ",
+                                "experience": "2年",
+                                "avatar": "💡",
+                                "description": "快速响应用户问题，支持多领域知识库"
+                            },
+                            {
+                                "name": "Workflow Orchestrator",
+                                "role": "流程编排",
+                                "skill": "多Agent协作调度",
+                                "experience": "4年",
+                                "avatar": "🕹️",
+                                "description": "负责各智能体之间的任务分配与流程自动化"
+                            }
                         ]
                         
                         current_members = []
