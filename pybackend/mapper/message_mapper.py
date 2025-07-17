@@ -17,6 +17,7 @@ class MessageMapper:
                 id TEXT PRIMARY KEY,
                 sessionId TEXT,
                 content TEXT,
+                tool TEXT,
                 role TEXT,
                 timestamp TEXT,
                 creatorId TEXT
@@ -29,14 +30,16 @@ class MessageMapper:
         cursor = self.conn.cursor()
         # if isinstance(message.content, list):
         message.content = json.dumps(message.content)
+        message.tool = json.dumps(message.tool)
         cursor.execute('''
             INSERT INTO message (
-                id, sessionId, content, role, timestamp, creatorId
-            ) VALUES (?, ?, ?, ?, ?, ?)
+                id, sessionId, content, tool, role, timestamp, creatorId
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
         ''', (
             message.id,
             message.sessionId,
             message.content,
+            message.tool,
             message.role,
             message.timestamp,
             message.creatorId
@@ -52,6 +55,7 @@ class MessageMapper:
         for row in cursor.fetchall():
             message = Message.from_dict(row)
             message.content = json.loads(message.content)
+            message.tool = json.loads(message.tool)
             messages.append(message)
         return messages
     
