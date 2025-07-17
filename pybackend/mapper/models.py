@@ -35,6 +35,7 @@ class Message:
     id: Optional[str] = None
     sessionId: str = ""
     content: str = ""
+    tool: str = ""
     role: str = ""  # user/assistant
     timestamp: str = datetime.now().isoformat()
     creatorId: str = ""
