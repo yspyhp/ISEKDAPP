@@ -13,6 +13,8 @@ import asyncio
 from isek_client import isek_client
 from service import sessionService
 from mapper.models import Session, Message
+from isek.node.node_v2 import Node
+from isek.node.etcd_registry import EtcdRegistry
 
 app = Flask(__name__)
 CORS(app)
@@ -58,10 +60,18 @@ def format_network_status(status, agents_count):
         "timestamp": datetime.now().isoformat()
     }
 
+etcd_registry = EtcdRegistry(host="47.236.116.81", port=2379)
+client_node = Node(node_id="lv9_client", port=8001, registry=etcd_registry)
+client_node.build_server(daemon=True)
 # --- API 实现 ---
 @app.route('/api/agents', methods=['GET'])
 def get_agents():
     try:
+        for node_id, card in client_node.all_nodes.items():
+            if "task_manager_url" not in card["metadata"]:
+                continue
+            print(node_id, card)
+            print(f"task_manager_url: {card["metadata"]["task_manager_url"]}")
         agents = asyncio.run(isek_client.discover_agents())
         return jsonify([format_agent(a) for a in agents])
     except Exception as e:
@@ -130,7 +140,7 @@ def create_session():
         "creatorId": isek_client.mock_user_id,
         "updaterId": isek_client.mock_user_id,
     })
-    sessionService.create_session(session)
+    sessionService.create_session(session=session)
     return jsonify(session), 201
 
 @app.route('/api/sessions/<session_id>', methods=['DELETE'])
@@ -167,7 +177,7 @@ def create_message(session_id):
         "timestamp": datetime.now().isoformat(),
         "creatorId": isek_client.mock_user_id
     })
-    sessionService.create_message(message, creator_id=isek_client.mock_user_id)
+    sessionService.create_message(message=message, creator_id=isek_client.mock_user_id)
 
     session.updatedAt = datetime.now().isoformat()
     
@@ -243,7 +253,7 @@ def chat():
                 {"type": "text", "text": ai_response}
             ]
         # todo message add tool
-        sessionService.create_message(Message.from_dict(ai_message), creator_id=agent_id)
+        sessionService.create_message(message=Message.from_dict(ai_message), creator_id=agent_id)
         # messages_db.append(ai_message)
         
         # session = next((s for s in sessions_db if s["id"] == session_id), None)
@@ -426,8 +436,8 @@ def health_check():
     return jsonify({
         "status": "healthy",
         "timestamp": datetime.now().isoformat(),
-        "sessions_count": len(sessionService.get_user_sessions(isek_client.mock_user_id)),
-        "messages_count": len(sessionService.get_user_sessions(isek_client.mock_user_id)),
+        "sessions_count": len(sessionService.get_user_sessions(creator_id=isek_client.mock_user_id)),
+        "messages_count": len(sessionService.get_user_sessions(creator_id=isek_client.mock_user_id)),
         "isek_node": network_status
     })
 
