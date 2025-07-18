@@ -142,5 +142,4 @@ if __name__ == '__main__':
     print("  GET  /agents/<id> - Get specific agent")
     print("  POST /chat - Send message")
     print("  GET  /network/status - Network status")
-    
     app.run(host='0.0.0.0', port=8000, debug=True) 

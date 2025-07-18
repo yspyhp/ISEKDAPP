@@ -1,5 +1,9 @@
+import json
 from datetime import datetime
 from typing import List
+
+import requests
+
 from mapper.models import Session, Message
 
 class SessionService:
@@ -7,76 +11,56 @@ class SessionService:
         from mapper import sessionMapper, messageMapper
         self.session_mapper = sessionMapper
         self.message_mapper = messageMapper
-    
-    def get_user_sessions(self, creator_id: str) -> List[Session]:
-        """获取用户所有会话"""
-        if not creator_id:
-            raise ValueError("creator_id is required")
-        return self.session_mapper.get_sessions(creator_id)
 
-    def get_session_by_id(self, session_id: str, creator_id: str) -> Session:
+    def get_user_sessions(self, base_url="http://127.0.0.1:6000", creator_id: str=None) -> List[Session]:
         """获取用户所有会话"""
-        if not creator_id:
-            raise ValueError("creator_id is required")
-        return self.session_mapper.get_by_id(session_id, creator_id)
-    
-    def create_session(self, session: Session) -> Session:
+        url = f"{base_url}/session/list?creator_id={creator_id}"
+        response = requests.get(url)
+        if response.status_code != 200:
+            raise RuntimeError(f"get_user_sessions error[{response.content}]")
+        return [Session.from_dict(c) for c in json.loads(response.content)]
+
+    def get_session_by_id(self, base_url="http://127.0.0.1:6000", session_id: str=None, creator_id: str=None) -> Session:
+        """获取用户所有会话"""
+        url = f"{base_url}/session/get?creator_id={creator_id}&session_id={session_id}"
+        response = requests.get(url)
+        if response.status_code != 200:
+            raise RuntimeError(f"get_session_by_id error[{response.content}]")
+        return Session.from_dict(json.loads(response.content))
+
+    def create_session(self, base_url="http://127.0.0.1:6000", session: Session=None) -> Session:
         """创建新会话"""
-        if not session.creatorId:
-            raise ValueError("creator_id is required")
-        
-        # 设置默认时间戳
-        if not session.createdAt:
-            session.createdAt = datetime.now().isoformat()
-        if not session.updatedAt:
-            session.updatedAt = session.createdAt
-            
-        return self.session_mapper.create_session(session)
-    
-    def delete_session(self, session_id: str, creator_id: str) -> bool:
+        url = f"{base_url}/session/create"
+        request_body = json.dumps(session.__dict__)
+        response = requests.post(url, data=request_body)
+        if response.status_code != 200:
+            raise RuntimeError(f"create_session error[{response.content}]")
+        return Session.from_dict(json.loads(response.content))
+
+    def delete_session(self, base_url="http://127.0.0.1:6000", session_id: str=None, creator_id: str=None) -> bool:
         """删除会话，同时删除关联的消息"""
-        if not creator_id:
-            raise ValueError("creator_id is required")
-            
-        # 先验证会话是否属于该用户
-        sessions = self.session_mapper.get_sessions(creator_id)
-        if not any(s.id == session_id for s in sessions):
-            raise PermissionError("Unauthorized access to session")
-            
-        # 先删除会话中的消息
-        self.message_mapper.delete_messages_by_session(session_id)
-        # 再删除会话
-        return self.session_mapper.delete_session(session_id, creator_id)
-    
-    def get_session_messages(self, session_id: str, creator_id: str) -> List[Message]:
+        url = f"{base_url}/session/delete?creator_id={creator_id}&session_id={session_id}"
+        response = requests.delete(url)
+        if response.status_code != 200:
+            raise RuntimeError(f"delete_session error[{response.content}]")
+        return json.loads(response.content)
+
+    def get_session_messages(self, base_url="http://127.0.0.1:6000", session_id: str=None, creator_id: str=None) -> List[Message]:
         """根据会话ID获取消息，需验证用户权限"""
-        if not creator_id:
-            raise ValueError("creator_id is required")
-            
-        # 验证会话是否属于该用户
-        sessions = self.session_mapper.get_sessions(creator_id)
-        if not any(s.id == session_id for s in sessions):
-            raise PermissionError("Unauthorized access to session messages")
-            
-        return self.message_mapper.get_messages_by_session(session_id)
-    
-    def create_message(self, message: Message, creator_id: str) -> Message:
+        url = f"{base_url}/message/list?creator_id={creator_id}&session_id={session_id}"
+        response = requests.get(url)
+        if response.status_code != 200:
+            raise RuntimeError(f"get_session_messages error[{response.content}]")
+        return [Message.from_dict(c) for c in json.loads(response.content)]
+
+    def create_message(self, base_url="http://127.0.0.1:6000", message: Message=None, creator_id: str=None) -> Message:
         """创建消息，需验证会话属于该用户"""
-        if not creator_id:
-            raise ValueError("creator_id is required")
-        if not message.sessionId:
-            raise ValueError("session_id is required")
-            
-        # 验证会话是否属于该用户
-        # sessions = self.session_mapper.get_sessions(creator_id)
-        # if not any(s.id == message.session_id for s in sessions):
-        #     raise PermissionError("Unauthorized access to session")
-            
-        # 设置默认时间戳
-        if not message.timestamp:
-            message.timestamp = datetime.now().isoformat()
-            
-        return self.message_mapper.create_message(message)
+        url = f"{base_url}/message/create?creator_id={creator_id}"
+        request_body = json.dumps(message.__dict__)
+        response = requests.post(url, data=request_body)
+        if response.status_code != 200:
+            raise RuntimeError(f"create_message error[{response.content}]")
+        return Message.from_dict(json.loads(response.content))
 
 
 #
