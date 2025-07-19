@@ -387,6 +387,106 @@ async def _create_streaming_response(response_data: Dict[str, Any]):
     }
     yield f'd:{json.dumps(finish_data)}\n'
 
+async def _simulate_team_formation_stream_async(call_id: str, tool_call: Dict[str, Any]):
+    """Async version of team formation streaming for testing"""
+    import asyncio
+    import json
+    
+    tool_args = tool_call.get("function", {}).get("arguments", {})
+    
+    # Initial call
+    initial_call = {
+        "type": "tool-call",
+        "toolCallId": call_id,
+        "toolName": "team-formation",
+        "args": {
+            **tool_args,
+            "status": "recruiting",
+            "progress": 0.1,
+            "currentStep": "开始招募小队成员...",
+            "members": []
+        }
+    }
+    yield f'0:{json.dumps(initial_call)}\n'
+    await asyncio.sleep(1)
+    
+    # Mock team members
+    members = [
+        {
+            "name": "Magic Image Agent",
+            "role": "图像生成",
+            "skill": "AI图片创作",
+            "experience": "2年",
+            "avatar": "🖼️",
+            "description": "根据文本描述生成高质量图片，支持风格化和多场景渲染"
+        },
+        {
+            "name": "Data Insight Agent",
+            "role": "数据分析",
+            "skill": "自动化数据洞察",
+            "experience": "3年",
+            "avatar": "📊",
+            "description": "擅长大数据分析、趋势预测和可视化报告"
+        },
+        {
+            "name": "Smart QA Agent",
+            "role": "智能问答",
+            "skill": "知识检索/FAQ",
+            "experience": "2年",
+            "avatar": "💡",
+            "description": "快速响应用户问题，支持多领域知识库"
+        },
+        {
+            "name": "Workflow Orchestrator",
+            "role": "流程编排",
+            "skill": "多Agent协作调度",
+            "experience": "4年",
+            "avatar": "🕹️",
+            "description": "负责各智能体之间的任务分配与流程自动化"
+        }
+    ]
+    
+    # Simulate recruitment process
+    current_members = []
+    for i, member in enumerate(members):
+        current_members.append(member)
+        progress = 0.2 + (i + 1) * 0.2
+        step = f"已招募 {member['name']} ({member['role']})..."
+        
+        update_call = {
+            "type": "tool-call",
+            "toolCallId": call_id,
+            "toolName": "team-formation",
+            "args": {
+                **tool_args,
+                "status": "recruiting",
+                "progress": progress,
+                "currentStep": step,
+                "members": current_members.copy()
+            }
+        }
+        yield f'0:{json.dumps(update_call)}\n'
+        await asyncio.sleep(0.8)
+    
+    # Final call
+    final_call = {
+        "type": "tool-call",
+        "toolCallId": call_id,
+        "toolName": "team-formation",
+        "args": {
+            **tool_args,
+            "status": "completed",
+            "progress": 1.0,
+            "currentStep": "小队组建完成！",
+            "members": current_members,
+            "teamStats": {
+                "totalMembers": len(current_members),
+                "avgExperience": "4年",
+                "skills": ["项目管理", "机器学习", "前端开发", "数据科学"]
+            }
+        }
+    }
+    yield f'0:{json.dumps(final_call)}\n'
 
 @app.get("/health")
 async def health_check():

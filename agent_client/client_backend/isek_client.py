@@ -11,6 +11,12 @@ from datetime import datetime
 import json
 import uuid
 import os
+import nest_asyncio
+
+# Fix FastAPI + ISEK Node event loop conflicts
+# FastAPI runs its own event loop, but ISEK's A2AClient uses async methods
+# nest_asyncio allows nested event loops to work together
+nest_asyncio.apply()
 
 from isek.node.node_v2 import Node
 from isek.node.etcd_registry import EtcdRegistry
@@ -145,21 +151,18 @@ class ISEKClient:
             # Get all nodes from registry
             if self.node and hasattr(self.node, 'all_nodes'):
                 all_nodes: Dict[str, Dict[str, Any]] = self.node.all_nodes
-                logger.info(f"All nodes discovered: {all_nodes}")
+                logger.info(f"Found {len(all_nodes)} total nodes in registry")
                 agents = []
                 
                 for node_id, node_details in all_nodes.items():
-                    logger.info(f"Processing node: {node_id} with details: {node_details}")
                     # Check what's in metadata
                     metadata = node_details.get('metadata', {})
-                    logger.info(f"Node {node_id} metadata: {metadata}")
                     if node_id != self.node_id:  # Exclude self
                         # Check if we have adapter card info in metadata
                         metadata = node_details.get('metadata', {})
                         
                         # If metadata has adapter card info, use it directly
                         if metadata.get('name') and metadata.get('bio'):
-                            logger.info(f"Using metadata for {node_id}")
                             agent = AgentConfig(
                                 name=metadata.get('name', node_id),
                                 node_id=node_id,
@@ -172,21 +175,17 @@ class ISEKClient:
                             agents.append(agent)
                         else:
                             # Request adapter card info from the agent
-                            logger.info(f"Metadata incomplete for {node_id}, requesting agent config")
                             try:
                                 request_message = json.dumps({
                                     "type": "agent_config_request",
                                     "node_id": node_id
                                 })
-                                logger.info(f"Requesting agent config from {node_id} with message: {request_message}")
                                 
                                 agent_config_response = self.node.send_message(node_id, request_message)
-                                logger.info(f"Received response from {node_id}: {repr(agent_config_response)}")
                                 
                                 if agent_config_response and agent_config_response.strip():
                                     try:
                                         config_data = json.loads(agent_config_response)
-                                        logger.info(f"Parsed config data: {config_data}")
                                         
                                         agent = AgentConfig(
                                             name=config_data.get('name', node_id),
@@ -198,9 +197,8 @@ class ISEKClient:
                                             address=metadata.get('url', '')
                                         )
                                         agents.append(agent)
-                                        logger.info(f"Successfully created agent config for {node_id}")
                                     except json.JSONDecodeError as json_err:
-                                        logger.error(f"JSON decode error for {node_id}: {json_err}. Raw response: {repr(agent_config_response)}")
+                                        logger.warning(f"Failed to parse agent config for {node_id}")
                                         # Fallback to metadata or basic info
                                         agent = AgentConfig(
                                             name=metadata.get('name', node_id),
@@ -213,7 +211,6 @@ class ISEKClient:
                                         )
                                         agents.append(agent)
                                 else:
-                                    logger.warning(f"Empty or None response from {node_id}")
                                     # Fallback to metadata
                                     agent = AgentConfig(
                                         name=metadata.get('name', node_id),
@@ -226,9 +223,7 @@ class ISEKClient:
                                     )
                                     agents.append(agent)
                             except Exception as e:
-                                logger.error(f"Failed to get agent config from {node_id}: {e}")
-                                import traceback
-                                traceback.print_exc()
+                                logger.warning(f"Failed to get agent config from {node_id}: {e}")
                                 # Fallback to metadata
                                 agent = AgentConfig(
                                     name=metadata.get('name', node_id),
@@ -297,7 +292,8 @@ class ISEKClient:
             logger.info(f"Sending message to agent {agent.node_id}")
             
             try:
-                # Try sending with increased retry count
+                # Send message to ISEK node
+                # nest_asyncio enables this to work within FastAPI's event loop
                 response = self.node.send_message(agent.node_id, message, retry_count=5)
                 logger.info(f"Received response: {repr(response)}")
                 
@@ -445,8 +441,15 @@ class ISEKClient:
         
         logger.info(f"Created session {session_id} for agent {agent.name} ({node_id})")
         
-        # Notify agent about new session
-        asyncio.create_task(self._notify_agent_session_created(node_id, session_id))
+        # Notify agent about new session (run in background)
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                asyncio.create_task(self._notify_agent_session_created(node_id, session_id))
+            else:
+                asyncio.run(self._notify_agent_session_created(node_id, session_id))
+        except Exception as e:
+            logger.warning(f"Failed to schedule session creation notification: {e}")
         
         return session
     
@@ -551,8 +554,15 @@ class ISEKClient:
         if session_id in self._messages_cache:
             del self._messages_cache[session_id]
         
-        # Notify agent about session deletion
-        asyncio.create_task(self._notify_agent_session_deleted(node_id, session_id))
+        # Notify agent about session deletion (run in background)
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                asyncio.create_task(self._notify_agent_session_deleted(node_id, session_id))
+            else:
+                asyncio.run(self._notify_agent_session_deleted(node_id, session_id))
+        except Exception as e:
+            logger.warning(f"Failed to schedule session deletion notification: {e}")
         
         return True
     
@@ -621,8 +631,15 @@ class ISEKClient:
         session.message_count = 0
         session.updated_at = datetime.now().isoformat()
         
-        # Notify agent to clear server-side session
-        asyncio.create_task(self._notify_agent_session_cleared(node_id, session_id))
+        # Notify agent to clear server-side session (run in background)
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                asyncio.create_task(self._notify_agent_session_cleared(node_id, session_id))
+            else:
+                asyncio.run(self._notify_agent_session_cleared(node_id, session_id))
+        except Exception as e:
+            logger.warning(f"Failed to schedule session clear notification: {e}")
         
         return True
     
@@ -711,9 +728,13 @@ class ISEKClient:
             agent = self.get_agent_by_id(node_id)
             if agent:
                 logger.info(f"Sending message to node {agent.node_id}")
-                # Send to agent (agent.node_id is the server's node_id)
-                response = self.node.send_message(agent.node_id, message_string)
-                logger.info(f"Notified node {node_id} about session {session_id} {action}, response: {response}")
+                # Send lifecycle notification to ISEK node
+                # nest_asyncio enables direct async calls in FastAPI context
+                try:
+                    response = self.node.send_message(agent.node_id, message_string, retry_count=3)
+                    logger.info(f"Notified node {node_id} about session {session_id} {action}, response: {response}")
+                except Exception as e:
+                    logger.warning(f"Failed to notify node {node_id}: {e}")
             else:
                 logger.warning(f"Node {node_id} not found in cache, skipping notification")
         except Exception as e:
