@@ -22,7 +22,7 @@ mkdir -p logs
 # 启动 Agent Server
 echo "🔧 启动 Agent Server (端口: 8888)..."
 cd agent_server
-python3 app.py > ../logs/agent_server.log 2>&1 &
+/Users/sparkss/.pyenv/versions/3.10.10/bin/python3 app.py > ../logs/agent_server.log 2>&1 &
 SERVER_PID=$!
 cd ..
 echo "Agent Server PID: $SERVER_PID"
@@ -31,7 +31,7 @@ sleep 5
 # 启动 Client 后端 (FastAPI)
 echo "🐍 启动 Client 后端 FastAPI (端口: 5001)..."
 cd agent_client/client_backend
-python3 app_fastapi.py > ../../logs/client_backend.log 2>&1 &
+/Users/sparkss/.pyenv/versions/3.10.10/bin/python3 app_fastapi.py > ../../logs/client_backend.log 2>&1 &
 CLIENT_BACKEND_PID=$!
 cd ../..
 echo "Client 后端 PID: $CLIENT_BACKEND_PID"

@@ -40,6 +40,7 @@ def main():
         server_node = Node(
             node_id=config["node_id"],
             port=config["port"], 
+            p2p=False,
             adapter=session_adapter,
             registry=etcd_registry
         )

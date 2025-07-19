@@ -19,16 +19,17 @@ from shared_formats import (
     parse_agent_response, AgentConfig
 )
 
+# Configure logging first
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+
 @dataclass
 class SessionLifecycleMessage:
     session_id: str
     action: str
     timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
     request_id: str = field(default_factory=lambda: str(uuid.uuid4()))
-
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 def load_config():
     """Load configuration from config.json"""
@@ -107,7 +108,7 @@ class ISEKClient:
             self.etcd_registry = EtcdRegistry(host=self.registry_host, port=self.registry_port)
             
             # Create ISEK Node with registry (use port 8082 to avoid conflicts)
-            self.node = Node(node_id=self.node_id, port=8082, registry=self.etcd_registry)
+            self.node = Node(node_id=self.node_id, port=8082, p2p=False, registry=self.etcd_registry)
             
             # Build server in daemon mode
             self.node.build_server(daemon=True)
@@ -296,13 +297,25 @@ class ISEKClient:
             logger.info(f"Sending message to agent {agent.node_id}")
             
             try:
-                response = self.node.send_message(agent.node_id, message)
+                # Try sending with increased retry count
+                response = self.node.send_message(agent.node_id, message, retry_count=5)
                 logger.info(f"Received response: {repr(response)}")
                 
                 # Check if response indicates delivery failure
                 if response and "Message delivery" in response and "failed" in response:
                     logger.error(f"Message delivery failed: {response}")
-                    return f"Error: Unable to reach agent {agent.name}. The agent may be offline or unreachable."
+                    # Try to refresh agent cache and reconnect before giving up
+                    logger.info("Attempting to refresh agents and retry once more...")
+                    await self.discover_agents(force_refresh=True)
+                    
+                    # One more attempt with fresh agent data
+                    try:
+                        response = self.node.send_message(agent.node_id, message, retry_count=3)
+                        if response and "Message delivery" in response and "failed" in response:
+                            return f"Error: Unable to reach agent {agent.name}. The agent may be offline or unreachable."
+                    except Exception as retry_error:
+                        logger.error(f"Retry attempt failed: {retry_error}")
+                        return f"Error: Unable to reach agent {agent.name}. The agent may be offline or unreachable."
                 
                 if response:
                     # Parse standardized response
