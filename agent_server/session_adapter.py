@@ -103,6 +103,8 @@ class SessionAdapter(Adapter):
                 response_data = await self.message_handler.handle_session_lifecycle(parsed_data)
             elif message_type == "task":
                 response_data = await self._handle_task_message(parsed_data)
+            elif message_type == "agent_config_request":
+                response_data = await self._handle_agent_config_request(parsed_data)
             else:
                 response_data = {
                     "success": False, 
@@ -138,6 +140,36 @@ class SessionAdapter(Adapter):
             log.error(f"Error handling task message: {e}")
             return {"success": False, "error": str(e)}
 
+    async def _handle_agent_config_request(self, parsed_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle agent configuration requests"""
+        try:
+            log.info(f"Handling agent config request: {parsed_data}")
+            data = parsed_data["data"]
+            node_id = data.get("node_id")
+            
+            if not node_id:
+                log.error("agent_config_request missing node_id")
+                return {"success": False, "error": "node_id is required"}
+            
+            log.info(f"Generating agent config for node_id: {node_id}")
+            # Get agent configuration using the adapter card
+            agent_config = self.get_agent_config(node_id)
+            log.info(f"Generated agent config: {agent_config}")
+            
+            response = {
+                "success": True,
+                "content": json.dumps(agent_config),
+                **agent_config  # Include all config fields in response
+            }
+            log.info(f"Returning agent config response: {response}")
+            return response
+            
+        except Exception as e:
+            log.error(f"Error handling agent config request: {e}")
+            import traceback
+            traceback.print_exc()
+            return {"success": False, "error": str(e)}
+
     def get_adapter_card(self) -> AdapterCard:
         """
         Get metadata about the adapter for discovery and identification purposes.
@@ -155,31 +187,24 @@ class SessionAdapter(Adapter):
     
     def get_agent_config(self, node_id: str) -> Dict[str, Any]:
         """
-        Get agent configuration in the format expected by client
+        Get simplified agent configuration with only essential information
         
         Args:
-            node_id: The node ID (which serves as the address)
+            node_id: The node ID
             
         Returns:
-            Dict containing agent configuration matching client's AgentConfig format
+            Dict containing simplified agent configuration with name, node_id and adapter card fields
         """
         adapter_card = self.get_adapter_card()
         
-        return create_agent_config(
-            node_id=node_id,
-            name=adapter_card.name,
-            description=adapter_card.bio,
-            system_prompt=f"{adapter_card.knowledge}\n\nRoutine: {adapter_card.routine}",
-            model="session-management-v1",
-            capabilities=[
-                "session_management",
-                "task_execution", 
-                "message_parsing",
-                "team_formation",
-                "data_analysis",
-                "text_generation"
-            ]
-        )
+        return {
+            "name": adapter_card.name,
+            "node_id": node_id,
+            "bio": adapter_card.bio,
+            "lore": adapter_card.lore,
+            "knowledge": adapter_card.knowledge,
+            "routine": adapter_card.routine
+        }
 
     # Expose session management methods through the session manager
     def get_user_sessions(self, creator_id: str):

@@ -10,7 +10,7 @@ import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button
 import { AgentSelector } from "@/components/agent-selector";
 import { AIAgent, ChatSession } from "@/lib/types";
 import { sessionsApi } from "@/lib/api";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 interface ThreadListProps {
   onSessionCreated?: () => void;
@@ -26,14 +26,23 @@ export const ThreadList: FC<ThreadListProps> = ({
   onSessionSelect,
 }) => {
   const [showAgentSelector, setShowAgentSelector] = useState(false);
+  const [localSessions, setLocalSessions] = useState<ChatSession[]>(sessions);
+  const [deletingSessions, setDeletingSessions] = useState<Set<string>>(new Set());
+  
+  // 同步外部sessions到本地状态
+  useEffect(() => {
+    setLocalSessions(sessions);
+  }, [sessions]);
 
   const handleAgentSelect = async (agent: AIAgent) => {
     try {
-      await sessionsApi.createSession({
-        agentId: agent.id,
+      const newSession = await sessionsApi.createSession({
+        agentId: agent.node_id,
         title: `Chat with ${agent.name}`,
       });
       setShowAgentSelector(false);
+      // 立即选中新创建的session
+      onSessionSelect?.(newSession);
       onSessionCreated?.();
     } catch (error) {
       console.error('Failed to create session:', error);
@@ -49,14 +58,36 @@ export const ThreadList: FC<ThreadListProps> = ({
   };
 
   const handleDeleteSession = async (sessionId: string) => {
+    // 乐观删除：立即从本地列表中移除
+    setLocalSessions(prev => prev.filter(s => s.id !== sessionId));
+    setDeletingSessions(prev => new Set(prev).add(sessionId));
+    
+    // 如果删除的是当前会话，清除选中状态
+    if (currentSession && currentSession.id === sessionId && onSessionSelect) {
+      onSessionSelect(null);
+    }
+    
     try {
       await sessionsApi.deleteSession(sessionId);
+      // 成功删除后通知父组件刷新
       onSessionCreated?.();
-      if (currentSession && currentSession.id === sessionId && onSessionSelect) {
-        onSessionSelect(null);
-      }
     } catch (error) {
       console.error('Failed to delete session:', error);
+      // 删除失败，恢复到列表中
+      const deletedSession = sessions.find(s => s.id === sessionId);
+      if (deletedSession) {
+        setLocalSessions(prev => [...prev, deletedSession].sort((a, b) => 
+          new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+        ));
+      }
+      // 尝试刷新列表，可能是缓存问题
+      onSessionCreated?.();
+    } finally {
+      setDeletingSessions(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(sessionId);
+        return newSet;
+      });
     }
   };
 
@@ -73,10 +104,11 @@ export const ThreadList: FC<ThreadListProps> = ({
     <div className="flex flex-col items-stretch gap-1.5">
       <ThreadListNew onNewSession={() => setShowAgentSelector(true)} />
       <ThreadListItems
-        sessions={sessions}
+        sessions={localSessions}
         currentSession={currentSession}
         onSessionSelect={handleSessionSelect}
         onDeleteSession={handleDeleteSession}
+        deletingSessions={deletingSessions}
       />
     </div>
   );

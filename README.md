@@ -1,211 +1,136 @@
-# ISEK UI - P2P Multi-Agent Chat Demo
+# ISEK DAPP 项目结构
 
-ISEK UI is a desktop application based on Electron + Next.js that serves as a client for ISEK node, connecting to local ISEK node and enabling P2P chat with agents in the network.
+这个仓库包含 ISEK DAPP 的完整实现，包含三个主要程序：
 
-## Architecture Overview
-
-### Frontend (Electron + Next.js)
-- **Location**: `electron/` directory
-- **Function**: Provides user interface, manages chat threads and messages
-- **Tech Stack**: Electron + Next.js + TypeScript + Tailwind CSS
-
-### Backend (Python Flask)
-- **Location**: `pybackend/` directory  
-- **Function**: ISEK node client, responsible for connecting to local ISEK node and discovering agents
-- **Tech Stack**: Python Flask + aiohttp + ISEK node protocol
-
-### Communication Flow
-1. Frontend discovers agents in ISEK node through backend API
-2. User selects agent to create chat thread
-3. Frontend sends message to backend
-4. Backend sends message to target agent through ISEK node
-5. Agent response returns through ISEK node
-6. Backend sends response to frontend for display
-
-## Development Environment Setup
-
-### 1. Install Dependencies
-
-   ```bash
-# Install frontend dependencies
-   npm install
-
-# Install backend dependencies
-cd pybackend
-pip install -r requirements.txt
-```
-
-### 2. Configure Environment Variables
-
-```bash
-# Copy environment variable template
-cp pybackend/env.example pybackend/.env
-
-# Edit .env file to configure ISEK node connection
-ISEK_NODE_URL=http://localhost:8000
-```
-
-### 3. Start Development Environment
-
-#### Using ISEK Node Simulator (Recommended for Testing)
-
-   ```bash
-# Start ISEK Node simulator
-cd pybackend
-python mock_isek_node.py
-
-# New terminal: Start backend service
-cd pybackend
-python app.py
-
-# New terminal: Start frontend development server
-   npm run dev
-
-# New terminal: Start Electron
-   npm run electron
-   ```
-
-#### Using Real ISEK Node
-
-   ```bash
-# Start ISEK node (refer to ISEK official documentation)
-# https://github.com/isekOS/ISEK
-
-# Start backend service
-cd pybackend
-python app.py
-
-# New terminal: Start frontend development server
-npm run dev
-
-# New terminal: Start Electron
-   npm run electron
-   ```
-
-## Features
-
-### Agent Discovery
-- Automatically discover available agents in the network through ISEK node
-- Display agent names, descriptions, and capabilities
-- Real-time agent status updates
-
-### Chat Functionality
-- P2P chat with agents in the network through ISEK node
-- Support for multi-threaded conversations
-- Save chat history
-- Real-time message sending and receiving
-
-### User Interface
-- Modern desktop application interface
-- Agent selector
-- Chat thread management
-- Responsive design
-
-## Project Structure
+## 📁 目录结构
 
 ```
 ISEKDAPP/
-├── electron/                 # Frontend application
-│   ├── app/                 # Next.js application
-│   ├── components/          # React components
-│   ├── lib/                 # Utility libraries and type definitions
-│   └── main.js              # Electron main process
-├── pybackend/               # Backend service
-│   ├── app.py               # Flask application main file
-│   ├── isek_client.py       # ISEK node client
-│   ├── mock_isek_node.py    # ISEK node simulator
-│   ├── requirements.txt     # Python dependencies
-│   └── env.example          # Environment variable template
-├── package.json             # Project configuration
-└── README.md               # Project documentation
+├── agent_server/                    # 🔧 Agent Server 程序
+│   ├── app.py                      # 服务器主入口
+│   ├── session_adapter.py          # 模块化会话适配器
+│   ├── modules/                    # 可插拔模块
+│   │   ├── base.py                # 抽象基类
+│   │   ├── session_manager.py     # 会话管理模块
+│   │   ├── task_manager.py        # 任务管理模块
+│   │   └── message_handler.py     # 消息处理模块
+│   ├── shared/                    # 共享消息格式
+│   ├── mapper/                    # 数据映射层
+│   └── service/                   # 业务逻辑层
+│
+├── agent_client/                   # 👥 Agent Client 程序集
+│   ├── client_backend/            # 🐍 Client 后端程序
+│   │   ├── app.py                 # Flask API 服务器
+│   │   ├── isek_client.py         # ISEK 节点客户端
+│   │   ├── shared_formats.py      # 共享消息格式
+│   │   └── requirements.txt       # Python 依赖
+│   │
+│   └── client_ui/                 # ⚡ Client 前端程序
+│       ├── app/                   # Next.js 应用
+│       ├── components/            # React 组件
+│       ├── lib/                   # 工具库
+│       ├── main.js               # Electron 主进程
+│       ├── package.json          # Node.js 依赖
+│       └── ...                   # 其他前端资源
+│
+├── logs/                          # 📄 运行时日志
+├── quick-start.sh                 # 🚀 快速启动脚本
+├── stop-all.sh                   # 🛑 停止所有服务脚本
+└── isek_database.db              # 💾 SQLite 数据库
 ```
 
-## Build and Deployment
+## 🎯 三个程序说明
 
-### Development Mode
-   ```bash
-npm run dev          # Start Next.js development server
-npm run electron     # Start Electron application
-   ```
+### 1. 🔧 Agent Server (`agent_server/`)
+- **功能**: ISEK 代理服务器，处理会话管理、任务执行
+- **端口**: 8888
+- **技术栈**: Python + ISEK Node + SQLite
+- **特点**: 模块化架构，支持可插拔组件
 
-### Production Build
-   ```bash
-# Build Next.js application
-   npm run build
+### 2. 🐍 Client Backend (`agent_client/client_backend/`)
+- **功能**: 客户端后端API服务器，连接前端和Agent Server
+- **端口**: 5000
+- **技术栈**: Python + Flask + ISEK Client
+- **特点**: RESTful API + WebSocket streaming
 
-# Build Python backend
-cd pybackend
-pyinstaller --onefile app.py
+### 3. ⚡ Client UI (`agent_client/client_ui/`)
+- **功能**: 用户界面，支持Web和桌面应用
+- **端口**: 3000 (Web), Electron (桌面)
+- **技术栈**: Next.js + React + TypeScript + Electron
+- **特点**: 现代响应式UI + 实时聊天界面
 
-# Package Electron application
-   npm run dist
-   ```
+## 🚀 快速开始
 
-## ISEK Node Integration
-
-### Current Status
-- Connect to local ISEK node
-- Discover agents through ISEK node
-- Send messages to agents through ISEK node
-- Use fallback agents when ISEK node is unavailable
-
-### ISEK Node Interface
-The backend expects ISEK node to provide the following interfaces:
-
-- `GET /health` - Health check
-- `GET /agents` - Get agent list
-- `POST /chat` - Send message to agent
-
-### Message Format
-Message format sent to ISEK node:
-
-```json
-{
-  "agent_id": "agent-123",
-  "messages": [
-    {"role": "user", "content": "Hello"}
-  ],
-  "system_prompt": "You are a friendly assistant"
-}
+### 启动所有服务
+```bash
+./quick-start.sh
 ```
 
-### Testing
-Use the provided simulator for testing:
-
-     ```bash
-# Start simulator
-cd pybackend
-python mock_isek_node.py
-
-# Test health check
-curl http://localhost:8000/health
-
-# Test get agent list
-curl http://localhost:8000/agents
-
-# Test send message
-curl -X POST http://localhost:8000/chat \
-  -H "Content-Type: application/json" \
-  -d '{"agent_id":"isek-assistant-001","messages":[{"role":"user","content":"Hello"}]}'
+### 停止所有服务
+```bash
+./stop-all.sh
 ```
 
-### Future Plans
-- Integrate real ISEK network protocol
-- Support agent registration and discovery
-- Implement P2P message transmission
-- Add agent capability verification
+### 单独启动服务
 
-## Tech Stack
+```bash
+# 启动 Agent Server
+cd agent_server
+python3 app.py
 
-- **Frontend**: Electron, Next.js, React, TypeScript, Tailwind CSS
-- **Backend**: Python, Flask, aiohttp, ISEK node protocol
-- **Build Tools**: Vite, Electron Builder
-- **Development Tools**: ESLint, Prettier
+# 启动 Client Backend
+cd agent_client/client_backend
+python3 app.py
 
-## Contributing
+# 启动 Client UI
+cd agent_client/client_ui
+npm run dev:frontend
 
-Issues and Pull Requests are welcome!
+# 启动 Electron (可选)
+cd agent_client/client_ui
+npm run dev:electron
+```
 
-## License
+## 🔗 服务通信
 
-MIT License
+```
+Client UI (3000) ←→ Client Backend (5000) ←→ Agent Server (8888)
+     ↕                      ↕                        ↕
+  用户界面              RESTful API           ISEK Node 通信
+```
+
+## 📊 日志和监控
+
+所有服务的日志文件存储在 `logs/` 目录中：
+- `agent_server.log` - Agent Server 日志
+- `client_backend.log` - Client Backend 日志  
+- `client_frontend.log` - Client UI 日志
+- `electron.log` - Electron 应用日志
+
+查看实时日志：
+```bash
+tail -f logs/*.log
+```
+
+## 🛠️ 开发说明
+
+### 环境要求
+- Python 3.8+
+- Node.js 16+
+- ETCD (外部注册中心)
+
+### 安装依赖
+```bash
+# Python 依赖
+cd agent_server && pip install -r requirements.txt
+cd agent_client/client_backend && pip install -r requirements.txt
+
+# Node.js 依赖
+cd agent_client/client_ui && npm install
+```
+
+### 配置
+复制并编辑环境变量文件：
+```bash
+cp env.example .env
+```

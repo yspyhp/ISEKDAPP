@@ -1,0 +1,12 @@
+{
+  "node_id": "isek_client_node",
+  "port": 8082,
+  "p2p": true,
+  "p2p_server_port": 9001,
+  "registry": {
+    "host": "47.236.116.81",
+    "port": 2379
+  },
+  "backend_port": 5001,
+  "frontend_port": 3000
+}

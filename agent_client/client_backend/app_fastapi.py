@@ -68,7 +68,7 @@ def format_session_response(session: SessionConfig) -> Dict[str, Any]:
     return {
         "id": session.id,
         "title": session.title,
-        "agentId": session.agent_id,
+        "agentId": session.node_id,
         "agentName": session.agent_name,
         "agentDescription": session.agent_description,
         "agentAddress": session.agent_address,
@@ -90,10 +90,10 @@ def format_message_response(message: MessageConfig) -> Dict[str, Any]:
 # --- API Endpoints ---
 
 @app.get("/api/agents")
-async def get_agents():
+async def get_agents(refresh: bool = False):
     """Get all available agents"""
     try:
-        agents = await client.discover_agents()
+        agents = await client.discover_agents(force_refresh=refresh)
         return [format_agent_response(agent) for agent in agents]
     except Exception as e:
         logger.error(f"Failed to get agents: {e}")
@@ -104,10 +104,6 @@ async def get_agent(agent_id: str):
     """Get specific agent by ID"""
     try:
         agent = client.get_agent_by_id(agent_id)
-        if not agent:
-            # Try to refresh agents cache
-            await client.discover_agents()
-            agent = client.get_agent_by_id(agent_id)
         
         if agent:
             return format_agent_response(agent)
@@ -132,7 +128,7 @@ async def get_network_status():
 async def get_sessions(agentId: Optional[str] = None, userId: Optional[str] = None):
     """Get all chat sessions, optionally filtered by agent"""
     try:
-        sessions = client.get_all_sessions(user_id=userId, agent_id=agentId)
+        sessions = client.get_all_sessions(user_id=userId, node_id=agentId)
         return [format_session_response(session) for session in sessions]
     except Exception as e:
         logger.error(f"Failed to get sessions: {e}")
@@ -142,20 +138,17 @@ async def get_sessions(agentId: Optional[str] = None, userId: Optional[str] = No
 async def create_session(request: Dict[str, Any]):
     """Create new chat session"""
     try:
-        agent_id = request.get('agentId')
+        node_id = request.get('agentId')  # Keep 'agentId' in API for frontend compatibility
         title = request.get('title')
         
-        if not agent_id:
+        if not node_id:
             raise HTTPException(status_code=400, detail="agentId is required")
         
-        # Check if agent exists
-        if not client.is_agent_available(agent_id):
-            # Try to refresh agents cache
-            await client.discover_agents()
-            if not client.is_agent_available(agent_id):
-                raise HTTPException(status_code=404, detail="Agent not found")
+        # Check if agent exists (remove expensive refresh)
+        if not client.is_agent_available(node_id):
+            raise HTTPException(status_code=404, detail="Agent not found")
         
-        session = client.create_session(agent_id=agent_id, title=title)
+        session = client.create_session(node_id=node_id, title=title)
         return format_session_response(session)
     except HTTPException:
         raise
@@ -257,7 +250,7 @@ async def chat(request: Request):
             raise HTTPException(status_code=404, detail="Session not found")
         
         # Verify the bound agent is still available
-        if not client.is_agent_available(session.agent_id):
+        if not client.is_agent_available(session.node_id):
             raise HTTPException(status_code=404, detail="Agent bound to session is not available")
         
         # Process user message content
@@ -315,7 +308,7 @@ async def chat(request: Request):
                 "content": user_message.content,
                 "timestamp": user_message.timestamp
             },
-            "agent": {"id": session.agent_id}
+            "agent": {"id": session.node_id}
         }
         
         # Check if streaming is requested
@@ -535,7 +528,7 @@ async def health_check():
 
 if __name__ == '__main__':
     import uvicorn
-    port = int(os.getenv('PORT', 5001))
+    port = int(5001)
     logger.info(f"Starting ISEK UI Backend (FastAPI) on port {port}")
     logger.info("Using native async support with ISEK client integration")
     uvicorn.run(app, host='0.0.0.0', port=port)

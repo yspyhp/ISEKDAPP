@@ -11,6 +11,18 @@ import json
 
 
 @dataclass
+class AgentConfig:
+    """Simplified agent configuration with only essential information"""
+    name: str = ""
+    node_id: str = ""
+    bio: str = ""       # from adapter card - displayed as description
+    lore: str = ""      # from adapter card
+    knowledge: str = "" # from adapter card - displayed as capabilities tags
+    routine: str = ""   # from adapter card
+    address: str = ""   # URL from node metadata
+
+
+@dataclass
 class ChatMessage:
     """Standard chat message format"""
     type: str = "chat"
@@ -107,6 +119,28 @@ def create_task_message_json(session_id: str, user_id: str, task_type: str, task
 def parse_agent_response(response_json: str) -> Dict[str, Any]:
     """Parse standardized agent response"""
     try:
+        # Handle empty or None responses
+        if not response_json or response_json.strip() == "":
+            return {
+                "success": False,
+                "content": "",
+                "tool_calls": [],
+                "timestamp": datetime.now().isoformat(),
+                "request_id": "",
+                "error": "Empty response from agent"
+            }
+        
+        # Check for error messages that aren't JSON
+        if "Error:" in response_json and ("failed" in response_json or "Message delivery" in response_json):
+            return {
+                "success": False,
+                "content": "",
+                "tool_calls": [],
+                "timestamp": datetime.now().isoformat(),
+                "request_id": "",
+                "error": response_json.strip()
+            }
+        
         data = json.loads(response_json)
         return {
             "success": data.get("success", False),
@@ -117,6 +151,11 @@ def parse_agent_response(response_json: str) -> Dict[str, Any]:
             "error": data.get("error", "")
         }
     except json.JSONDecodeError as e:
+        # Log the raw response for debugging
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Failed to parse agent response as JSON. Raw response: {repr(response_json)}")
+        
         return {
             "success": False,
             "content": "",

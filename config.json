@@ -1,0 +1,17 @@
+{
+  "server": {
+    "isek_node_port": 8888,
+    "p2p_server_port": 9000,
+    "etcd_registry_host": "47.236.116.81",
+    "etcd_registry_port": 2379
+  },
+  "client": {
+    "isek_node_port": 8082,
+    "p2p_server_port": 9001,
+    "backend_port": 5001,
+    "backend_alt_port": 5000,
+    "frontend_port": 3000,
+    "etcd_registry_host": "47.236.116.81",
+    "etcd_registry_port": 2379
+  }
+}

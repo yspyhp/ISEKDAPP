@@ -41,6 +41,18 @@ class DefaultMessageHandler(BaseMessageHandler):
                         user_msgs = [m for m in data["messages"] if m.get("role") == "user"]
                         if user_msgs:
                             data["user_message"] = user_msgs[-1].get("content", "")
+                elif msg_type == "agent_config_request":
+                    # Ensure required fields for agent config requests
+                    if "node_id" not in data:
+                        log.warning("agent_config_request missing node_id")
+                elif msg_type == "session_lifecycle":
+                    # Ensure required fields for session lifecycle messages
+                    if "action" not in data:
+                        log.warning("session_lifecycle missing action")
+                elif msg_type == "task":
+                    # Ensure required fields for task messages
+                    if "task_type" not in data:
+                        log.warning("task message missing task_type")
                 
                 return {
                     "success": True,

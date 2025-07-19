@@ -1,15 +1,11 @@
-// AI Agent type
+// AI Agent type - simplified to match server adapter card
 export interface AIAgent {
-  id: string;
   name: string;
-  description: string;
-  systemPrompt: string;
-  model: string;
-  address: string;
-  isek_id: string;
-  capabilities: string[];
-  status: 'online' | 'offline';
-  network: string;
+  node_id: string;
+  bio: string;       // from adapter card - displayed as description
+  lore: string;      // from adapter card
+  knowledge: string; // from adapter card - displayed as capabilities tags
+  routine: string;   // from adapter card
 }
 
 // Chat session type
@@ -43,7 +39,7 @@ export interface CreateSessionRequest {
 // Send message request
 export interface SendMessageRequest {
   agentId: string;
-  address: string;
+  address: string; // uses agent.node_id
   sessionId: string;
   messages: ChatMessage[];
   system?: string;

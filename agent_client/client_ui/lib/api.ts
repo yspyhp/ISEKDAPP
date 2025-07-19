@@ -118,7 +118,7 @@ export const chatApi = {
       address: agent.address,
       sessionId,
       messages,
-      system: agent.systemPrompt,
+      system: `${agent.knowledge}\n\nRoutine: ${agent.routine}`,
     };
 
     return this.sendMessage(request);
@@ -137,7 +137,7 @@ export const chatApi = {
       address: agent.address,
       sessionId,
       messages,
-      system: agent.systemPrompt,
+      system: `${agent.knowledge}\n\nRoutine: ${agent.routine}`,
     };
     const response = await fetch('/api/chat', {
       method: 'POST',

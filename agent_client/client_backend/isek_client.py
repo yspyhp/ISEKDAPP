@@ -10,12 +10,13 @@ from dataclasses import dataclass, field
 from datetime import datetime
 import json
 import uuid
+import os
 
 from isek.node.node_v2 import Node
 from isek.node.etcd_registry import EtcdRegistry
 from shared_formats import (
     create_chat_message_json, create_session_lifecycle_message_json, 
-    parse_agent_response
+    parse_agent_response, AgentConfig
 )
 
 @dataclass
@@ -29,19 +30,13 @@ class SessionLifecycleMessage:
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# --- Data Models ---
+def load_config():
+    """Load configuration from config.json"""
+    config_path = os.path.join(os.path.dirname(__file__), 'config.json')
+    with open(config_path, 'r') as f:
+        return json.load(f)
 
-@dataclass
-class AgentConfig:
-    """Agent configuration data model"""
-    id: str
-    name: str
-    description: str
-    system_prompt: str
-    model: str
-    address: str
-    capabilities: List[str] = field(default_factory=list)
-    status: str = "active"
+# --- Data Models ---
 
 @dataclass 
 class NetworkStatus:
@@ -57,7 +52,7 @@ class SessionConfig:
     """Session configuration data model"""
     id: str
     title: str
-    agent_id: str
+    node_id: str
     agent_name: str
     agent_description: str
     agent_address: str
@@ -88,14 +83,19 @@ class ISEKClient:
     ISEK Client that integrates with ISEK Node to provide data for API endpoints
     """
     
-    def __init__(self, node_id: str = "isek_client_node", registry_host: str = "47.236.116.81", registry_port: int = 2379):
+    def __init__(self, node_id: str = None, registry_host: str = None, registry_port: int = None):
         """Initialize ISEK client with node configuration"""
-        self.node_id = node_id
-        self.registry_host = registry_host
-        self.registry_port = registry_port
+        # Load config and use as defaults
+        config = load_config()
+        
+        self.node_id = node_id or config.get("node_id", "isek_client_node")
+        self.registry_host = registry_host or config.get("registry_host", "47.236.116.81")
+        self.registry_port = registry_port or config.get("registry_port", 2379)
         self.node = None
         self.etcd_registry = None
         self._agents_cache: List[AgentConfig] = []
+        self._agents_cache_time: Optional[datetime] = None
+        self._cache_ttl_seconds: int = 300  # 5分钟缓存
         self._network_status: NetworkStatus = NetworkStatus(connected=False, agents_count=0)
         self._sessions_cache: Dict[str, SessionConfig] = {}
         self._messages_cache: Dict[str, List[MessageConfig]] = {}
@@ -106,8 +106,8 @@ class ISEKClient:
             # Create etcd registry
             self.etcd_registry = EtcdRegistry(host=self.registry_host, port=self.registry_port)
             
-            # Create ISEK Node with registry
-            self.node = Node(node_id=self.node_id, registry=self.etcd_registry)
+            # Create ISEK Node with registry (use port 8082 to avoid conflicts)
+            self.node = Node(node_id=self.node_id, port=8082, registry=self.etcd_registry)
             
             # Build server in daemon mode
             self.node.build_server(daemon=True)
@@ -123,33 +123,125 @@ class ISEKClient:
             logger.error(f"Failed to initialize ISEK node: {e}")
             self._network_status = NetworkStatus(connected=False, agents_count=0)
     
-    async def discover_agents(self) -> List[AgentConfig]:
+    def _is_cache_valid(self) -> bool:
+        """Check if agents cache is still valid"""
+        if not self._agents_cache_time:
+            return False
+        elapsed = (datetime.now() - self._agents_cache_time).total_seconds()
+        return elapsed < self._cache_ttl_seconds
+    
+    async def discover_agents(self, force_refresh: bool = False) -> List[AgentConfig]:
         """Discover available agents through ISEK node registry"""
         try:
+            # Return cached results if valid and not forced refresh
+            if not force_refresh and self._is_cache_valid() and self._agents_cache:
+                logger.info(f"Returning cached agents: {len(self._agents_cache)} agents")
+                return self._agents_cache
+            
             if not self._network_status.connected:
                 await self.initialize_node()
             
             # Get all nodes from registry
             if self.node and hasattr(self.node, 'all_nodes'):
                 all_nodes: Dict[str, Dict[str, Any]] = self.node.all_nodes
+                logger.info(f"All nodes discovered: {all_nodes}")
                 agents = []
                 
                 for node_id, node_details in all_nodes.items():
+                    logger.info(f"Processing node: {node_id} with details: {node_details}")
+                    # Check what's in metadata
+                    metadata = node_details.get('metadata', {})
+                    logger.info(f"Node {node_id} metadata: {metadata}")
                     if node_id != self.node_id:  # Exclude self
-                        # Create agent config from node details
-                        agent = AgentConfig(
-                            id=node_id,
-                            name=node_details.get('name', node_id),
-                            description=node_details.get('description', f"Agent {node_id}"),
-                            system_prompt=node_details.get('system_prompt', "You are a helpful AI assistant."),
-                            model=node_details.get('model', "gpt-4"),
-                            address=node_id,
-                            capabilities=node_details.get('capabilities', ["text_generation"]),
-                            status="active"
-                        )
-                        agents.append(agent)
+                        # Check if we have adapter card info in metadata
+                        metadata = node_details.get('metadata', {})
+                        
+                        # If metadata has adapter card info, use it directly
+                        if metadata.get('name') and metadata.get('bio'):
+                            logger.info(f"Using metadata for {node_id}")
+                            agent = AgentConfig(
+                                name=metadata.get('name', node_id),
+                                node_id=node_id,
+                                bio=metadata.get('bio', f"Agent {node_id}"),
+                                lore=metadata.get('lore', ''),
+                                knowledge=metadata.get('knowledge', ''),
+                                routine=metadata.get('routine', ''),
+                                address=metadata.get('url', '')
+                            )
+                            agents.append(agent)
+                        else:
+                            # Request adapter card info from the agent
+                            logger.info(f"Metadata incomplete for {node_id}, requesting agent config")
+                            try:
+                                request_message = json.dumps({
+                                    "type": "agent_config_request",
+                                    "node_id": node_id
+                                })
+                                logger.info(f"Requesting agent config from {node_id} with message: {request_message}")
+                                
+                                agent_config_response = self.node.send_message(node_id, request_message)
+                                logger.info(f"Received response from {node_id}: {repr(agent_config_response)}")
+                                
+                                if agent_config_response and agent_config_response.strip():
+                                    try:
+                                        config_data = json.loads(agent_config_response)
+                                        logger.info(f"Parsed config data: {config_data}")
+                                        
+                                        agent = AgentConfig(
+                                            name=config_data.get('name', node_id),
+                                            node_id=node_id,
+                                            bio=config_data.get('bio', ''),
+                                            lore=config_data.get('lore', ''),
+                                            knowledge=config_data.get('knowledge', ''),
+                                            routine=config_data.get('routine', ''),
+                                            address=metadata.get('url', '')
+                                        )
+                                        agents.append(agent)
+                                        logger.info(f"Successfully created agent config for {node_id}")
+                                    except json.JSONDecodeError as json_err:
+                                        logger.error(f"JSON decode error for {node_id}: {json_err}. Raw response: {repr(agent_config_response)}")
+                                        # Fallback to metadata or basic info
+                                        agent = AgentConfig(
+                                            name=metadata.get('name', node_id),
+                                            node_id=node_id,
+                                            bio=metadata.get('bio', f"Agent {node_id}"),
+                                            lore=metadata.get('lore', ''),
+                                            knowledge=metadata.get('knowledge', ''),
+                                            routine=metadata.get('routine', ''),
+                                            address=metadata.get('url', '')
+                                        )
+                                        agents.append(agent)
+                                else:
+                                    logger.warning(f"Empty or None response from {node_id}")
+                                    # Fallback to metadata
+                                    agent = AgentConfig(
+                                        name=metadata.get('name', node_id),
+                                        node_id=node_id,
+                                        bio=metadata.get('bio', f"Agent {node_id}"),
+                                        lore=metadata.get('lore', ''),
+                                        knowledge=metadata.get('knowledge', ''),
+                                        routine=metadata.get('routine', ''),
+                                        address=metadata.get('url', '')
+                                    )
+                                    agents.append(agent)
+                            except Exception as e:
+                                logger.error(f"Failed to get agent config from {node_id}: {e}")
+                                import traceback
+                                traceback.print_exc()
+                                # Fallback to metadata
+                                agent = AgentConfig(
+                                    name=metadata.get('name', node_id),
+                                    node_id=node_id,
+                                    bio=metadata.get('bio', f"Agent {node_id}"),
+                                    lore=metadata.get('lore', ''),
+                                    knowledge=metadata.get('knowledge', ''),
+                                    routine=metadata.get('routine', ''),
+                                    address=metadata.get('url', '')
+                                )
+                                agents.append(agent)
                 
                 self._agents_cache = agents
+                self._agents_cache_time = datetime.now()
                 self._network_status.agents_count = len(agents)
                 logger.info(f"Discovered {len(agents)} agents through registry")
                 return agents
@@ -161,9 +253,9 @@ class ISEKClient:
             logger.error(f"Failed to discover agents: {e}")
             return []
     
-    def get_agent_by_id(self, agent_id: str) -> Optional[AgentConfig]:
-        """Get specific agent by ID from cache"""
-        return next((agent for agent in self._agents_cache if agent.id == agent_id), None)
+    def get_agent_by_id(self, node_id: str) -> Optional[AgentConfig]:
+        """Get specific agent by node_id from cache"""
+        return next((agent for agent in self._agents_cache if agent.node_id == node_id), None)
     
     def get_network_status(self) -> NetworkStatus:
         """Get current network connection status"""
@@ -176,7 +268,7 @@ class ISEKClient:
             if not session:
                 return "Error: Session not found"
             
-            agent = self.get_agent_by_id(session.agent_id)
+            agent = self.get_agent_by_id(session.node_id)
             if not agent:
                 return "Error: Agent not found"
             
@@ -196,31 +288,46 @@ class ISEKClient:
                 session_id=session_id,
                 user_id=self.node_id,  # client's node_id is user_id
                 messages=history,
-                system_prompt=system_prompt or agent.system_prompt,
+                system_prompt=system_prompt or f"{agent.knowledge}\n\nRoutine: {agent.routine}",
                 user_message=user_message
             )
             
-            # Send to agent (agent.address is the server's node_id)
-            response = self.node.send_message(agent.address, message)
+            # Send to agent (agent.node_id is the server's node_id)
+            logger.info(f"Sending message to agent {agent.node_id}")
             
-            if response:
-                # Parse standardized response
-                parsed_response = parse_agent_response(response)
-                if parsed_response["success"]:
-                    return parsed_response["content"]
-                else:
-                    return f"Error: {parsed_response['error']}"
-            
-            return "Error: No response from agent"
+            try:
+                response = self.node.send_message(agent.node_id, message)
+                logger.info(f"Received response: {repr(response)}")
+                
+                # Check if response indicates delivery failure
+                if response and "Message delivery" in response and "failed" in response:
+                    logger.error(f"Message delivery failed: {response}")
+                    return f"Error: Unable to reach agent {agent.name}. The agent may be offline or unreachable."
+                
+                if response:
+                    # Parse standardized response
+                    parsed_response = parse_agent_response(response)
+                    logger.info(f"Parsed response: {parsed_response}")
+                    if parsed_response["success"]:
+                        return parsed_response["content"]
+                    else:
+                        return f"Error: {parsed_response['error']}"
+                
+                logger.warning("No response received from agent")
+                return "Error: No response from agent"
+                
+            except Exception as send_error:
+                logger.error(f"Exception during message send: {send_error}")
+                return f"Error: Failed to communicate with agent {agent.name}"
                 
         except Exception as e:
             logger.error(f"Failed to send message for session {session_id}: {e}")
             return "Error: Unable to communicate with agent"
     
-    def is_agent_available(self, agent_id: str) -> bool:
-        """Check if agent is available and active"""
-        agent = self.get_agent_by_id(agent_id)
-        return agent is not None and agent.status == "active"
+    def is_agent_available(self, node_id: str) -> bool:
+        """Check if agent is available"""
+        agent = self.get_agent_by_id(node_id)
+        return agent is not None
     
     # --- Tool Call Parsing Methods ---
     
@@ -301,28 +408,32 @@ class ISEKClient:
     
     # --- Session Management Methods ---
     
-    def create_session(self, agent_id: str, title: str = None, user_id: str = None) -> SessionConfig:
+    def create_session(self, node_id: str, title: str = None, user_id: str = None) -> SessionConfig:
         """Create a new chat session"""
-        agent = self.get_agent_by_id(agent_id)
+        logger.info(f"Creating session for node {node_id}, title: {title}")
+        agent = self.get_agent_by_id(node_id)
         if not agent:
-            raise ValueError(f"Agent {agent_id} not found")
+            logger.error(f"Agent {node_id} not found")
+            raise ValueError(f"Agent {node_id} not found")
         
         session_id = str(uuid.uuid4())
         session = SessionConfig(
             id=session_id,
             title=title or f"Chat with {agent.name}",
-            agent_id=agent_id,
+            node_id=node_id,
             agent_name=agent.name,
-            agent_description=agent.description,
-            agent_address=agent.address,
+            agent_description=agent.bio,
+            agent_address=agent.node_id,
             user_id=user_id
         )
         
         self._sessions_cache[session_id] = session
         self._messages_cache[session_id] = []
         
+        logger.info(f"Created session {session_id} for agent {agent.name} ({node_id})")
+        
         # Notify agent about new session
-        asyncio.create_task(self._notify_agent_session_created(agent_id, session_id))
+        asyncio.create_task(self._notify_agent_session_created(node_id, session_id))
         
         return session
     
@@ -330,14 +441,14 @@ class ISEKClient:
         """Get session by ID"""
         return self._sessions_cache.get(session_id)
     
-    def get_all_sessions(self, user_id: str = None, agent_id: str = None) -> List[SessionConfig]:
-        """Get all sessions, optionally filtered by user or agent"""
+    def get_all_sessions(self, user_id: str = None, node_id: str = None) -> List[SessionConfig]:
+        """Get all sessions from local cache only (fast)"""
         sessions = list(self._sessions_cache.values())
         
         if user_id:
             sessions = [s for s in sessions if s.user_id == user_id]
-        if agent_id:
-            sessions = [s for s in sessions if s.agent_id == agent_id]
+        if node_id:
+            sessions = [s for s in sessions if s.node_id == node_id]
         
         # Update message counts
         for session in sessions:
@@ -345,20 +456,90 @@ class ISEKClient:
         
         return sessions
     
+    async def get_all_sessions_distributed(self, user_id: str = None, node_id: str = None) -> List[SessionConfig]:
+        """Get all sessions including from remote agents (slower but comprehensive)"""
+        # 先获取本地缓存
+        local_sessions = self.get_all_sessions(user_id=user_id, node_id=node_id)
+        all_sessions = list(local_sessions)
+        
+        # 如果网络连接可用，查询远程节点
+        if self.node and self._network_status.connected and self._agents_cache:
+            current_user_id = user_id or self.node_id
+            
+            # 并发查询所有agents（优化性能）
+            import asyncio
+            
+            async def query_agent(agent):
+                if node_id and agent.node_id != node_id:
+                    return []
+                
+                try:
+                    request_message = json.dumps({
+                        "type": "session_list_request",
+                        "user_id": current_user_id,
+                        "timestamp": datetime.now().isoformat(),
+                        "request_id": str(uuid.uuid4())
+                    })
+                    
+                    # 使用超时来避免阻塞
+                    response = self.node.send_message(agent.node_id, request_message)
+                    if response and not ("Error:" in response and "failed" in response):
+                        session_data = json.loads(response)
+                        if session_data.get("success") and session_data.get("sessions"):
+                            return session_data["sessions"]
+                except Exception as e:
+                    logger.warning(f"Failed to get sessions from {agent.node_id}: {e}")
+                return []
+            
+            # 并发查询所有agents
+            tasks = [query_agent(agent) for agent in self._agents_cache]
+            try:
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+                
+                for i, result in enumerate(results):
+                    if isinstance(result, list):
+                        agent = self._agents_cache[i]
+                        for remote_session in result:
+                            session = SessionConfig(
+                                id=remote_session.get("id", ""),
+                                title=remote_session.get("title", f"Chat with {agent.name}"),
+                                node_id=agent.node_id,
+                                agent_name=agent.name,
+                                agent_description=agent.bio,
+                                agent_address=agent.node_id,
+                                created_at=remote_session.get("created_at", ""),
+                                updated_at=remote_session.get("updated_at", ""),
+                                message_count=remote_session.get("message_count", 0),
+                                user_id=current_user_id
+                            )
+                            
+                            # 检查是否已存在于本地缓存中，避免重复
+                            if not any(s.id == session.id for s in all_sessions):
+                                all_sessions.append(session)
+                                
+            except Exception as e:
+                logger.error(f"Error in distributed session query: {e}")
+        
+        # 按更新时间排序
+        all_sessions.sort(key=lambda s: s.updated_at, reverse=True)
+        return all_sessions
+    
     def delete_session(self, session_id: str) -> bool:
         """Delete a session and all its messages"""
         if session_id not in self._sessions_cache:
-            return False
+            # Session不在缓存中，可能已被删除或缓存失效，但仍返回True避免404错误
+            logger.warning(f"Session {session_id} not found in cache, treating as already deleted")
+            return True
         
         session = self._sessions_cache[session_id]
-        agent_id = session.agent_id
+        node_id = session.node_id
         
         del self._sessions_cache[session_id]
         if session_id in self._messages_cache:
             del self._messages_cache[session_id]
         
         # Notify agent about session deletion
-        asyncio.create_task(self._notify_agent_session_deleted(agent_id, session_id))
+        asyncio.create_task(self._notify_agent_session_deleted(node_id, session_id))
         
         return True
     
@@ -419,7 +600,7 @@ class ISEKClient:
             return False
         
         session = self._sessions_cache[session_id]
-        agent_id = session.agent_id
+        node_id = session.node_id
         
         self._messages_cache[session_id] = []
         
@@ -428,7 +609,7 @@ class ISEKClient:
         session.updated_at = datetime.now().isoformat()
         
         # Notify agent to clear server-side session
-        asyncio.create_task(self._notify_agent_session_cleared(agent_id, session_id))
+        asyncio.create_task(self._notify_agent_session_cleared(node_id, session_id))
         
         return True
     
@@ -485,7 +666,7 @@ class ISEKClient:
             "created_at": session.created_at,
             "updated_at": session.updated_at,
             "agent_info": {
-                "id": session.agent_id,
+                "id": session.node_id,
                 "name": session.agent_name,
                 "description": session.agent_description
             }
@@ -493,10 +674,17 @@ class ISEKClient:
     
     # --- Agent Session Notification Methods ---
     
-    async def _notify_agent_lifecycle(self, agent_id: str, session_id: str, action: str):
+    async def _notify_agent_lifecycle(self, node_id: str, session_id: str, action: str):
         """Unified method to notify agent about session lifecycle events using standardized format"""
         try:
-            if not self._network_status.connected or not self.node:
+            logger.info(f"Attempting to notify node {node_id} about session {session_id} {action}")
+            
+            if not self._network_status.connected:
+                logger.warning(f"Network not connected, skipping notification for session {action}")
+                return
+            
+            if not self.node:
+                logger.warning(f"Node not initialized, skipping notification for session {action}")
                 return
             
             # Create standardized session lifecycle message
@@ -505,29 +693,35 @@ class ISEKClient:
                 user_id=self.node_id,  # client's node_id as user_id
                 action=action
             )
+            logger.info(f"Created lifecycle message: {message_string}")
             
-            agent = self.get_agent_by_id(agent_id)
+            agent = self.get_agent_by_id(node_id)
             if agent:
-                # Send to agent (agent.address is the server's node_id)
-                self.node.send_message(agent.address, message_string)
-                logger.info(f"Notified agent {agent_id} about session {session_id} {action}")
+                logger.info(f"Sending message to node {agent.node_id}")
+                # Send to agent (agent.node_id is the server's node_id)
+                response = self.node.send_message(agent.node_id, message_string)
+                logger.info(f"Notified node {node_id} about session {session_id} {action}, response: {response}")
+            else:
+                logger.warning(f"Node {node_id} not found in cache, skipping notification")
         except Exception as e:
-            logger.error(f"Failed to notify agent {agent_id} about session {action}: {e}")
+            logger.error(f"Failed to notify node {node_id} about session {action}: {e}")
+            import traceback
+            traceback.print_exc()
     
-    async def _notify_agent_session_created(self, agent_id: str, session_id: str):
-        await self._notify_agent_lifecycle(agent_id, session_id, "created")
+    async def _notify_agent_session_created(self, node_id: str, session_id: str):
+        await self._notify_agent_lifecycle(node_id, session_id, "created")
     
-    async def _notify_agent_session_deleted(self, agent_id: str, session_id: str):
-        await self._notify_agent_lifecycle(agent_id, session_id, "deleted")
+    async def _notify_agent_session_deleted(self, node_id: str, session_id: str):
+        await self._notify_agent_lifecycle(node_id, session_id, "deleted")
     
-    async def _notify_agent_session_cleared(self, agent_id: str, session_id: str):
-        await self._notify_agent_lifecycle(agent_id, session_id, "cleared")
+    async def _notify_agent_session_cleared(self, node_id: str, session_id: str):
+        await self._notify_agent_lifecycle(node_id, session_id, "cleared")
 
 # --- Client Factory ---
 
 _client_instance = None
 
-def get_client(node_id: str = "isek_client_node", registry_host: str = "47.236.116.81", registry_port: int = 2379) -> ISEKClient:
+def get_client(node_id: str = None, registry_host: str = None, registry_port: int = None) -> ISEKClient:
     """
     Get or create the ISEK client instance (singleton pattern)
     

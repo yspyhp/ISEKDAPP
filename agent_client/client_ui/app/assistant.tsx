@@ -16,6 +16,7 @@ export const Assistant = () => {
   const [currentSession, setCurrentSession] = useState<ChatSession | null>(null);
   const [agents, setAgents] = useState<AIAgent[]>([]);
   const [showAgentSelector, setShowAgentSelector] = useState(false);
+  const [creatingSession, setCreatingSession] = useState(false);
 
   useEffect(() => {
     sessionsApi.getSessions().then(setSessions);
@@ -35,15 +36,24 @@ export const Assistant = () => {
   // 智能体选择后创建 session
   const handleAgentSelect = async (agent: AIAgent) => {
     try {
+      setCreatingSession(true);
+      setShowAgentSelector(false);
+      
       const session = await sessionsApi.createSession({
-        agentId: agent.id,
+        agentId: agent.node_id,
         title: `小队 - ${agent.name}`,
       });
-      setShowAgentSelector(false);
+      
+      // 立即设置当前 session 并停止 loading
       setCurrentSession(session);
+      setCreatingSession(false);
+      
+      // 在后台刷新 sessions 列表
       handleSessionCreated();
     } catch (error) {
-      // 可加错误提示
+      console.error('Failed to create session:', error);
+      setShowAgentSelector(true);
+      setCreatingSession(false);
     }
   };
 
@@ -61,6 +71,13 @@ export const Assistant = () => {
           <MyRuntimeProvider session={currentSession} onMessageSent={handleMessageSent}>
             <Thread />
           </MyRuntimeProvider>
+        ) : creatingSession ? (
+          <div className="flex h-full items-center justify-center bg-background">
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto mb-4"></div>
+              <p className="text-lg text-muted-foreground">创建聊天会话中...</p>
+            </div>
+          </div>
         ) : showAgentSelector ? (
           <div className="flex h-full items-center justify-center bg-background">
             <div className="w-full max-w-lg mx-auto">

@@ -40,6 +40,13 @@ export function MyRuntimeProvider({
     if (!session?.id) return;
     setLoading(true);
     messagesApi.getMessages(session.id).then(rawMsgs => {
+      // 如果是新session没有消息，快速显示空聊天界面
+      if (rawMsgs.length === 0) {
+        setMessages([]);
+        setLoading(false);
+        return;
+      }
+      
       setMessages(
         rawMsgs.map(msg => {
           if (msg.role === "assistant") {
@@ -110,6 +117,11 @@ export function MyRuntimeProvider({
         })
       );
       setLoading(false);
+    }).catch(error => {
+      console.error('Failed to load messages:', error);
+      // 如果加载失败，也显示空聊天界面
+      setMessages([]);
+      setLoading(false);
     });
   }, [session?.id]);
 
@@ -129,10 +141,28 @@ export function MyRuntimeProvider({
       // 本地展示用户消息
       setMessages(msgs => [...msgs, { role: "user", content: [{ type: "text", text: userText }] }]);
 
-      // 流式展示 AI 回复
+      // 立即显示 AI 回复的 typing 状态
       let aiText = "";
-      let aiMsg: ThreadMessageLike = { role: "assistant", content: [] };
+      let aiMsg: ThreadMessageLike = { role: "assistant", content: [{ type: "text", text: "🤔 正在思考..." }] };
       setMessages(msgs => [...msgs, aiMsg]);
+      
+      // 设置超时处理
+      const timeoutId = setTimeout(() => {
+        setMessages(msgs => {
+          const msgsCopy = [...msgs];
+          const lastIndex = msgsCopy.length - 1;
+          if (lastIndex >= 0 && msgsCopy[lastIndex].role === "assistant" && 
+              msgsCopy[lastIndex].content[0]?.text === "🤔 正在思考...") {
+            msgsCopy[lastIndex] = {
+              ...msgsCopy[lastIndex],
+              content: [{ type: "text", text: "连接超时，请稍后重试..." }]
+            };
+          }
+          return msgsCopy;
+        });
+      }, 10000); // 10秒超时
+      
+    try {
     for await (const chunk of chatApi.sendMessageStream(
       userText,
       session.id,
@@ -140,6 +170,10 @@ export function MyRuntimeProvider({
       allMessages // 发送完整历史+新消息
     )) {
       if (chunk.type === "text") {
+        // 第一个文本块到达时，清除 typing 状态
+        if (aiText === "") {
+          aiMsg = { ...aiMsg, content: [] };
+        }
         aiText += chunk.text;
         aiMsg = { ...aiMsg, content: [{ type: "text", text: aiText }, ...(Array.isArray(aiMsg.content) ? aiMsg.content.filter(p => p.type !== 'text') : [])] };
         setMessages(msgs => {
@@ -193,17 +227,29 @@ export function MyRuntimeProvider({
         continue;
       }
     }
+    // 清除超时定时器
+    clearTimeout(timeoutId);
+    } catch (streamError) {
+      clearTimeout(timeoutId);
+      throw streamError;
+    }
     } catch (error) {
       console.error('发送消息错误:', error);
-      // 显示错误消息
-      const errorMsg: ThreadMessageLike = { 
-        role: "assistant", 
-        content: [{ 
-          type: "text", 
-          text: `发送消息时出现错误: ${error instanceof Error ? error.message : String(error)}` 
-        }] 
-      };
-      setMessages(msgs => [...msgs, errorMsg]);
+      // 更新最后一条 AI 消息为错误状态
+      setMessages(msgs => {
+        const msgsCopy = [...msgs];
+        const lastIndex = msgsCopy.length - 1;
+        if (lastIndex >= 0 && msgsCopy[lastIndex].role === "assistant") {
+          msgsCopy[lastIndex] = {
+            ...msgsCopy[lastIndex],
+            content: [{ 
+              type: "text", 
+              text: `连接错误: ${error instanceof Error ? error.message : String(error)}` 
+            }]
+          };
+        }
+        return msgsCopy;
+      });
     } finally {
       // 消息发送后通知父组件刷新 sessions
       if (onMessageSent) onMessageSent();

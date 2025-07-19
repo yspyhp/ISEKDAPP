@@ -31,7 +31,7 @@ export function AgentSelector({ onAgentSelect, onCancel }: AgentSelectorProps) {
     } else {
       const filtered = agents.filter(agent =>
         agent.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        agent.description.toLowerCase().includes(searchTerm.toLowerCase())
+        agent.bio.toLowerCase().includes(searchTerm.toLowerCase())
       );
       setFilteredAgents(filtered);
     }
@@ -109,7 +109,7 @@ export function AgentSelector({ onAgentSelect, onCancel }: AgentSelectorProps) {
           </div>
         ) : (
           filteredAgents.map((agent) => (
-            <Tooltip key={agent.id}>
+            <Tooltip key={agent.node_id}>
               <TooltipTrigger asChild>
                 <div
                   className="p-3 border rounded-lg hover:bg-gray-50 cursor-pointer transition-colors flex items-center gap-3"
@@ -125,25 +125,48 @@ export function AgentSelector({ onAgentSelect, onCancel }: AgentSelectorProps) {
                       {agent.name}
                     </h4>
                     <p className="text-xs text-gray-400 truncate mt-1">
-                      {agent.address}
+                      {agent.bio || agent.node_id}
                     </p>
                   </div>
                 </div>
               </TooltipTrigger>
-              {/* 保留 tooltip 展示详细信息 */}
+              {/* 展示简化的 adapter card 信息 */}
               <TooltipContent side="right" className="max-w-sm p-4 rounded-xl shadow-lg bg-white dark:bg-neutral-900">
-                <div className="space-y-1">
+                <div className="space-y-2">
                   <div className="font-semibold text-base text-gray-900 dark:text-white">{agent.name}</div>
-                  <div className="text-sm text-gray-500 dark:text-gray-300">{agent.description}</div>
-                  {agent.capabilities && agent.capabilities.length > 0 && (
-                    <div className="flex flex-wrap gap-1 mt-2">
-                      {agent.capabilities.map(cap => (
-                        <span key={cap} className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs">{cap}</span>
-                      ))}
+                  <div className="text-xs text-gray-400">节点ID: {agent.node_id}</div>
+                  <div className="text-xs text-gray-400">地址: {agent.address}</div>
+                  
+                  {agent.bio && (
+                    <div className="text-sm text-gray-600 dark:text-gray-300">
+                      {agent.bio}
                     </div>
                   )}
-                  <div className="text-xs text-gray-400 mt-1">模型: {agent.model}</div>
-                  <div className="text-xs text-gray-400">地址: {agent.address}</div>
+                  
+                  {agent.lore && (
+                    <div className="text-sm text-gray-600 dark:text-gray-300">
+                      <strong>背景:</strong> {agent.lore}
+                    </div>
+                  )}
+                  
+                  {agent.knowledge && (
+                    <div className="space-y-1">
+                      <div className="text-xs font-medium text-gray-700 dark:text-gray-300">能力:</div>
+                      <div className="flex flex-wrap gap-1">
+                        {agent.knowledge.split(',').map((skill, index) => (
+                          <span key={index} className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs">
+                            {skill.trim()}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {agent.routine && (
+                    <div className="text-sm text-gray-600 dark:text-gray-300">
+                      <strong>工作流程:</strong> {agent.routine}
+                    </div>
+                  )}
                 </div>
               </TooltipContent>
             </Tooltip>
