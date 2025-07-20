@@ -172,3 +172,4 @@ app/build/
 tmp/
 temp/
 *.db
+/dapp
