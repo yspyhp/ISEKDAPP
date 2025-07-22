@@ -16,7 +16,7 @@ const MemberCard = ({ member }: { member: any }) => {
         <div className="flex-1 min-w-0">
           <div className="text-sm font-medium truncate">{member.name}</div>
           <div className="text-xs text-muted-foreground">{member.role}</div>
-          <div className="text-xs text-blue-600">{member.experience}</div>
+
         </div>
         <div className="w-2 h-2 bg-green-500 rounded-full"></div>
       </div>
@@ -34,9 +34,7 @@ const MemberCard = ({ member }: { member: any }) => {
           <div className="text-xs text-muted-foreground mb-2">
             <strong>技能：</strong>{member.skill}
           </div>
-          <div className="text-xs text-muted-foreground mb-2">
-            <strong>经验：</strong>{member.experience}
-          </div>
+
           <div className="text-xs text-muted-foreground">
             {member.description}
           </div>
@@ -48,34 +46,34 @@ const MemberCard = ({ member }: { member: any }) => {
 
 // 简化的工具参数定义（不使用zod）
 const teamFormationSchema = {
-  type: "object",
+  type: "object" as const,
   properties: {
-    task: { type: "string", description: "任务名称" },
-    requiredRoles: { type: "array", items: { type: "string" }, description: "需要的角色列表" },
-    status: { type: "string", enum: ["starting", "recruiting", "completed"], description: "状态" },
-    progress: { type: "number", minimum: 0, maximum: 1, description: "进度" },
-    currentStep: { type: "string", description: "当前步骤" },
+    task: { type: "string" as const, description: "任务名称" },
+    requiredRoles: { type: "array" as const, items: { type: "string" as const }, description: "需要的角色列表" },
+    status: { type: "string" as const, enum: ["starting", "recruiting", "completed"], description: "状态" },
+    progress: { type: "number" as const, minimum: 0, maximum: 1, description: "进度" },
+    currentStep: { type: "string" as const, description: "当前步骤" },
     members: { 
-      type: "array", 
+      type: "array" as const, 
       items: {
-        type: "object",
+        type: "object" as const,
         properties: {
-          name: { type: "string" },
-          role: { type: "string" },
-          skill: { type: "string" },
-          experience: { type: "string" },
-          avatar: { type: "string" },
-          description: { type: "string" }
+          name: { type: "string" as const },
+          role: { type: "string" as const },
+          skill: { type: "string" as const },
+
+          avatar: { type: "string" as const },
+          description: { type: "string" as const }
         }
       },
       description: "团队成员" 
     },
     teamStats: {
-      type: "object",
+      type: "object" as const,
       properties: {
-        totalMembers: { type: "number" },
-        avgExperience: { type: "string" },
-        skills: { type: "array", items: { type: "string" } }
+        totalMembers: { type: "number" as const },
+
+        skills: { type: "array" as const, items: { type: "string" as const } }
       },
       description: "团队统计"
     }
@@ -86,8 +84,29 @@ const teamFormationSchema = {
 export const TeamFormationToolUI = makeAssistantToolUI({
   toolName: "team-formation",
   render: ({ args, status }) => {
+    // 确保小队数据完整，修复团队规模显示问题
     const { task, progress = 0, currentStep = "", members = [], teamStats } = args || {};
     const toolStatus = args?.status || status?.type || "starting";
+    
+    // 确保members是数组且不为空
+    const validMembers = Array.isArray(members) ? members : [];
+    const memberCount = validMembers.length;
+    
+    // 调试信息
+    console.log('🔍 TeamFormationToolUI Debug:', {
+      args,
+      members,
+      validMembers,
+      memberCount,
+      teamStats,
+      toolStatus
+    });
+    
+    // 确保teamStats包含正确的数据
+    const validTeamStats = teamStats || {
+      totalMembers: memberCount,
+      skills: ['AI图片创作', '数据分析', '智能问答', '流程编排']
+    };
 
     return (
       <div className="w-full max-w-2xl mx-auto my-4 p-4 border rounded-lg bg-muted">
@@ -95,20 +114,20 @@ export const TeamFormationToolUI = makeAssistantToolUI({
         <div className="mb-4">
           <div className="flex items-center gap-2 mb-2">
             <span className="text-xl">🚀</span>
-            <h3 className="text-lg font-semibold">{task || "AI项目开发小队"}</h3>
+            <h3 className="text-lg font-semibold">{String(task || "AI项目开发小队")}</h3>
           </div>
           
           {/* 进度条 */}
           <div className="w-full bg-gray-200 rounded-full h-3 dark:bg-gray-700 mb-2">
             <div
               className="bg-gradient-to-r from-blue-500 to-green-500 h-3 rounded-full transition-all duration-500 ease-out"
-              style={{ width: `${Math.round(progress * 100)}%` }}
+              style={{ width: `${Math.round((progress as number || 0) * 100)}%` }}
             ></div>
           </div>
           
           <div className="flex justify-between items-center text-sm">
-            <span className="text-muted-foreground">{currentStep}</span>
-            <span className="font-medium">{Math.round(progress * 100)}%</span>
+            <span className="text-muted-foreground">{String(currentStep || "")}</span>
+            <span className="font-medium">{Math.round((progress as number || 0) * 100)}%</span>
           </div>
         </div>
 
@@ -129,22 +148,22 @@ export const TeamFormationToolUI = makeAssistantToolUI({
         </div>
 
         {/* 小队成员列表 */}
-        {members && members.length > 0 && (
+        {validMembers.length > 0 && (
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <h4 className="text-md font-medium flex items-center gap-2">
                 <span>👥</span>
-                小队成员 ({members.length}人)
+                小队成员 ({memberCount}人)
               </h4>
               {toolStatus === "recruiting" && (
                 <div className="text-xs text-muted-foreground">
-                  {`${members.length}/4 已招募`}
+                  {`${memberCount}/4 已招募`}
                 </div>
               )}
             </div>
             
             <div className="grid grid-cols-1 gap-2">
-              {members.map((member: any, idx: number) => (
+              {validMembers.map((member: any, idx: number) => (
                 <MemberCard key={idx} member={member} />
               ))}
             </div>
@@ -152,24 +171,22 @@ export const TeamFormationToolUI = makeAssistantToolUI({
         )}
 
         {/* 小队统计（完成后显示） */}
-        {toolStatus === "completed" && teamStats && (
+        {toolStatus === "completed" && validTeamStats && (
           <div className="mt-4 p-3 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
             <div className="text-sm font-medium text-green-800 dark:text-green-200 mb-2">
               ✅ 小队组建成功！
             </div>
-            <div className="grid grid-cols-2 gap-4 text-xs text-green-700 dark:text-green-300">
-              <div>
+            <div className="text-xs text-green-700 dark:text-green-300">
+              <div className="mb-2">
                 <span className="font-medium">团队规模：</span>
-                {teamStats.totalMembers}人
+                {memberCount}人
               </div>
-              <div>
-                <span className="font-medium">平均经验：</span>
-                {teamStats.avgExperience}
-              </div>
-            </div>
-            <div className="mt-2 text-xs text-green-700 dark:text-green-300">
-              <span className="font-medium">核心技能：</span>
-              {teamStats.skills.join("、")}
+              {(validTeamStats as any).skills && Array.isArray((validTeamStats as any).skills) && (validTeamStats as any).skills.length > 0 && (
+                <div>
+                  <span className="font-medium">核心技能：</span>
+                  {(validTeamStats as any).skills.join("、")}
+                </div>
+              )}
             </div>
           </div>
         )}

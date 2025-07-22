@@ -78,7 +78,6 @@ class SessionService:
             
         return self.message_mapper.create_message(message)
 
-
 #
 # from datetime import datetime
 #

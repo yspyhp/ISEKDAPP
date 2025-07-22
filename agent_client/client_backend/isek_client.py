@@ -404,13 +404,11 @@ class ISEKClient:
         """Format tool calls for frontend consumption"""
         formatted_calls = []
         for tool_call in tool_calls:
+            # Preserve all function data to maintain complete tool call information including members
             formatted_call = {
                 "id": tool_call.get("id", str(uuid.uuid4())),
                 "type": tool_call.get("type", "function"),
-                "function": {
-                    "name": tool_call.get("function", {}).get("name", "unknown"),
-                    "arguments": tool_call.get("function", {}).get("arguments", {})
-                }
+                "function": tool_call.get("function", {})
             }
             formatted_calls.append(formatted_call)
         return formatted_calls

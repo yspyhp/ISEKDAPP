@@ -1,0 +1,10 @@
+{
+  "node_id": "lyra_agent",
+  "port": 8889,
+  "p2p": true,
+  "p2p_server_port": 9002,
+  "registry": {
+    "host": "47.236.116.81",
+    "port": 2379
+  }
+}

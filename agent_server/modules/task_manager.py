@@ -89,7 +89,6 @@ class DefaultTaskManager(BaseTaskManager):
                 "name": "Magic Image Agent",
                 "role": "图像生成",
                 "skill": "AI图片创作",
-                "experience": "2年",
                 "avatar": "🖼️",
                 "description": "根据文本描述生成高质量图片，支持风格化和多场景渲染"
             },
@@ -97,7 +96,6 @@ class DefaultTaskManager(BaseTaskManager):
                 "name": "Data Insight Agent", 
                 "role": "数据分析",
                 "skill": "自动化数据洞察",
-                "experience": "3年",
                 "avatar": "📊",
                 "description": "擅长大数据分析、趋势预测和可视化报告"
             },
@@ -105,7 +103,6 @@ class DefaultTaskManager(BaseTaskManager):
                 "name": "Smart QA Agent",
                 "role": "智能问答",
                 "skill": "知识检索/FAQ",
-                "experience": "2年", 
                 "avatar": "💡",
                 "description": "快速响应用户问题，支持多领域知识库"
             },
@@ -113,7 +110,6 @@ class DefaultTaskManager(BaseTaskManager):
                 "name": "Workflow Orchestrator",
                 "role": "流程编排",
                 "skill": "多Agent协作调度",
-                "experience": "4年",
                 "avatar": "🕹️",
                 "description": "负责各智能体之间的任务分配与流程自动化"
             }

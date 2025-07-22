@@ -83,6 +83,53 @@ export function MyRuntimeProvider({
             } else if (typeof contentAny === "string") {
               parts = [{ type: "text", text: contentAny }];
             }
+            
+            // 处理 toolInvocations 字段（从消息历史中）- 修复小队数据解析
+            const toolInvocations = (msg as any).toolInvocations;
+            if (Array.isArray(toolInvocations)) {
+              for (const toolCall of toolInvocations) {
+                // 确保工具调用数据格式正确
+                const toolName = toolCall.function?.name || toolCall.name || 'unknown';
+                const toolArgs = toolCall.function?.arguments || toolCall.arguments || {};
+                
+                // 对于小队组建工具，确保包含完整的成员信息
+                if (toolName === 'team-formation' && toolArgs) {
+                  // 确保小队数据完整
+                  const enhancedArgs = {
+                    ...toolArgs,
+                    members: toolArgs.members || [],
+                    status: toolArgs.status || 'completed',
+                    progress: toolArgs.progress || 1.0,
+                    currentStep: toolArgs.currentStep || '小队组建完成！',
+                    teamStats: toolArgs.teamStats || {
+                      totalMembers: (toolArgs.members || []).length,
+                      skills: ['AI图片创作', '数据分析', '智能问答', '流程编排']
+                    }
+                  };
+                  
+
+                  
+                  parts.push({ 
+                    type: "tool-call", 
+                    toolCallId: toolCall.id,
+                    toolName: toolName,
+                    args: enhancedArgs,
+                    argsText: JSON.stringify(enhancedArgs, null, 2)
+                  });
+                } else {
+                  // 其他工具调用保持原样
+                  parts.push({ 
+                    type: "tool-call", 
+                    toolCallId: toolCall.id,
+                    toolName: toolName,
+                    args: toolArgs,
+                    argsText: typeof toolArgs === 'string' 
+                      ? toolArgs
+                      : JSON.stringify(toolArgs, null, 2)
+                  });
+                }
+              }
+            }
             // 新增：处理tool字段
             const tool = (msg as any).tool;
             if (tool && typeof tool === "object") {
@@ -206,11 +253,41 @@ export function MyRuntimeProvider({
           return msgs;
         });
       } else if (chunk.type === "tool-call") {
-        // 处理工具调用流式更新
+        // 处理工具调用流式更新 - 修复小队数据传递
+        let toolArgs = chunk.args;
+        
+        // 调试信息
+        console.log('🔍 Tool call chunk debug:', {
+          chunk,
+          toolArgs,
+          toolName: chunk.toolName
+        });
+        
+        // 对于小队组建工具，确保数据完整
+        if (chunk.toolName === 'team-formation' && toolArgs) {
+          toolArgs = {
+            ...toolArgs,
+            members: toolArgs.members || [],
+            status: toolArgs.status || 'completed',
+            progress: toolArgs.progress || 1.0,
+            currentStep: toolArgs.currentStep || '小队组建完成！',
+            teamStats: toolArgs.teamStats || {
+              totalMembers: (toolArgs.members || []).length,
+              skills: ['AI图片创作', '数据分析', '智能问答', '流程编排']
+            }
+          };
+          
+          console.log('🔍 Enhanced toolArgs:', toolArgs);
+        }
+        
         const toolCallChunk = {
           ...chunk,
-          argsText: typeof chunk.args === 'string' ? chunk.args : JSON.stringify(chunk.args, null, 2)
+          args: toolArgs,
+          argsText: typeof toolArgs === 'string' ? toolArgs : JSON.stringify(toolArgs, null, 2)
         };
+        
+
+        
         aiMsg = { ...aiMsg, content: updateToolCall(Array.isArray(aiMsg.content) ? aiMsg.content : [], toolCallChunk) };
         setMessages(msgs => {
           const idx = [...msgs].reverse().findIndex(m => m.role === "assistant" && !m.id);

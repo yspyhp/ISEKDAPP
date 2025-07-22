@@ -11,6 +11,9 @@ from isek.node.etcd_registry import EtcdRegistry
 from isek.node.node_v2 import Node
 from session_adapter import SessionAdapter
 
+# Import optional plugin modules
+from modules import DefaultSessionManager, DefaultTaskManager, DefaultMessageHandler
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -34,7 +37,12 @@ def main():
         )
         
         # Create session adapter
-        session_adapter = SessionAdapter()
+        session_adapter = SessionAdapter(
+            agent=None,  # Add your IsekTeam here: SessionAdapter(agent=agent_team)
+            session_manager=DefaultSessionManager(),
+            task_manager=DefaultTaskManager(),
+            message_handler=DefaultMessageHandler()
+        )
         
         # Create the server node
         server_node = Node(

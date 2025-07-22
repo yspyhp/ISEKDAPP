@@ -1,4 +1,6 @@
 import os
+import sys
+import json
 from dotenv import load_dotenv
 from isek.agent.isek_agent import IsekAgent
 from isek.models.openai import OpenAIModel
@@ -6,13 +8,32 @@ from isek.tools.calculator import calculator_tools
 from isek.memory.memory import Memory as SimpleMemory
 from isek.node.node_v2 import Node
 from isek.team.isek_team import IsekTeam
-from isek.adapter.isek_adapter import IsekAdapter
 from isek.utils.log import log
 from isek.node.etcd_registry import EtcdRegistry
 
+# Add path to import SessionAdapter and modules
+sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..'))
+from session_adapter import SessionAdapter
+from modules import DefaultSessionManager, DefaultTaskManager, DefaultMessageHandler
 
-# Load environment variables from .env file
-load_dotenv()
+
+# Load environment variables from .env file in project root
+project_root = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', '..')
+env_path = os.path.join(project_root, '.env')
+load_dotenv(env_path)
+
+def load_config():
+    """Load configuration from config.json (local Lyra config or fallback to main config)"""
+    # Try local Lyra config first
+    local_config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config.json')
+    if os.path.exists(local_config_path):
+        with open(local_config_path, 'r') as f:
+            return json.load(f)
+    
+    # Fallback to main config
+    main_config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'config.json')
+    with open(main_config_path, 'r') as f:
+        return json.load(f)
 
 def main():
     """
@@ -126,19 +147,31 @@ def main():
     """
     
     print("Initializing the agent...")
-    memory_tool_agent = IsekAgent(
-        name="LV9-Agent",
-        model=OpenAIModel(
-            model_id=os.getenv("OPENAI_MODEL_NAME", "gpt-4o-mini"),
-            api_key=os.getenv("OPENAI_API_KEY"),
-            base_url=os.getenv("OPENAI_BASE_URL")
-        ),
-        tools=[calculator_tools],
-        memory=SimpleMemory(),
-        description=prompt,
-        debug_mode=True
-    )
-    print("Agent initialized.")
+    
+    # Simplified prompt for testing to avoid API timeouts
+    simplified_prompt = """You are Lyra, an AI prompt optimization specialist. 
+    You help users improve their prompts to get better AI responses.
+    
+    For any user request, provide a brief, helpful response about prompt optimization."""
+    
+    try:
+        memory_tool_agent = IsekAgent(
+            name="LV9-Agent",
+            model=OpenAIModel(
+                model_id=os.getenv("OPENAI_MODEL_NAME", "gpt-4o-mini"),
+                api_key=os.getenv("OPENAI_API_KEY"),
+                base_url=os.getenv("OPENAI_BASE_URL")
+            ),
+            tools=[calculator_tools],
+            memory=SimpleMemory(),
+            description=simplified_prompt,  # Use simplified prompt
+            debug_mode=False  # Disable debug mode for faster processing
+        )
+        print("Agent initialized.")
+    except Exception as e:
+        print(f"Error initializing agent: {e}")
+        log.error(f"Agent initialization failed: {e}")
+        raise
 
     # 2. Create a Team and add the Agent as a member
     agent_team = IsekTeam(
@@ -147,17 +180,46 @@ def main():
         members=[memory_tool_agent]
     )
 
-    # 3. Start the Node Server with the Agent Team
-    server_node_id = "Lyra"
-    print(f"Starting server node '{server_node_id}'to host the agent team...")
-    log.info("Server node is starting up...")
+    # 3. Create SessionAdapter with the Agent Team
+    session_adapter = SessionAdapter(
+        agent=agent_team,  # Connect the agent team to the session adapter
+        session_manager=DefaultSessionManager(),
+        task_manager=DefaultTaskManager(),
+        message_handler=DefaultMessageHandler()
+    )
     
-    etcd_registry = EtcdRegistry(host="47.236.116.81", port=2379)
-    # Create the server node.
-    server_node = Node(node_id=server_node_id, port=8888, p2p=True, p2p_server_port=9000, adapter=IsekAdapter(agent=agent_team), registry=etcd_registry)
+    # 4. Load configuration and start the Node Server with SessionAdapter
+    try:
+        # Load configuration
+        config = load_config()
+        
+        # Create etcd registry from config
+        etcd_registry = EtcdRegistry(
+            host=config["registry"]["host"], 
+            port=config["registry"]["port"]
+        )
+        
+        print(f"Starting Lyra Agent Server...")
+        print(f"Node ID: {config['node_id']}")
+        print(f"Port: {config['port']}")
+        print(f"P2P Port: {config['p2p_server_port']}")
+        print(f"Registry: {config['registry']['host']}:{config['registry']['port']}")
+        log.info("Lyra Agent server is starting up...")
+        
+        # Create the server node with SessionAdapter using config values
+        server_node = Node(
+            node_id=config["node_id"],
+            port=config["port"], 
+            adapter=session_adapter, 
+            registry=etcd_registry
+        )
 
-    # Start the server in the foreground.
-    server_node.build_server(daemon=False)
+        # Start the server in the foreground
+        server_node.build_server(daemon=False)
+        
+    except Exception as e:
+        log.error(f"Failed to start Lyra Agent server: {e}")
+        raise
     # print(server_node.adapter.run("random a number 0-10"))
 
 if __name__ == "__main__":

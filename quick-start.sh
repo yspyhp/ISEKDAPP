@@ -3,6 +3,31 @@
 # 快速启动脚本 - ISEK DAPP (Client前端、Client后端、Agent Server)
 echo "🚀 ISEK DAPP 快速启动"
 
+# 选择启动模式
+echo ""
+echo "请选择启动模式:"
+echo "1) 默认 Agent Server (Session Management)"
+echo "2) Lyra Agent (AI Prompt Optimizer)"
+echo ""
+read -p "选择模式 (1/2) [默认: 1]: " -n 1 -r
+echo ""
+AGENT_MODE=${REPLY:-1}
+
+# 检查 Lyra 模式的环境变量
+if [ "$AGENT_MODE" = "2" ]; then
+    if [ ! -f ".env" ]; then
+        echo "⚠️  警告: 启动 Lyra Agent 需要 .env 文件"
+        echo "请基于 env.example 创建 .env 文件并配置 OpenAI API Key"
+        echo ""
+        read -p "是否继续启动？ (y/n): " -n 1 -r
+        echo ""
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            echo "启动已取消"
+            exit 1
+        fi
+    fi
+fi
+
 # 停止现有进程
 echo "停止现有进程..."
 ./stop-all.sh
@@ -12,7 +37,11 @@ sleep 2
 echo "检查并清理端口..."
 lsof -ti:5001 | xargs kill -9 2>/dev/null || true  # Client 后端
 lsof -ti:5000 | xargs kill -9 2>/dev/null || true  # Client 后端备用
-lsof -ti:8888 | xargs kill -9 2>/dev/null || true  # Agent Server
+lsof -ti:8888 | xargs kill -9 2>/dev/null || true  # Agent Server (默认)
+lsof -ti:8889 | xargs kill -9 2>/dev/null || true  # Agent Server (Lyra)
+lsof -ti:9000 | xargs kill -9 2>/dev/null || true  # P2P (默认)
+lsof -ti:9001 | xargs kill -9 2>/dev/null || true  # P2P (Client)
+lsof -ti:9002 | xargs kill -9 2>/dev/null || true  # P2P (Lyra)
 lsof -ti:3000 | xargs kill -9 2>/dev/null || true  # Client 前端
 sleep 2
 
@@ -20,12 +49,21 @@ sleep 2
 mkdir -p logs
 
 # 启动 Agent Server
-echo "🔧 启动 Agent Server (端口: 8888)..."
-cd agent_server
-/Users/sparkss/.pyenv/versions/3.10.10/bin/python3 app.py > ../logs/agent_server.log 2>&1 &
-SERVER_PID=$!
-cd ..
-echo "Agent Server PID: $SERVER_PID"
+if [ "$AGENT_MODE" = "2" ]; then
+    echo "🎯 启动 Lyra Agent Server (端口: 8888)..."
+    cd agent_server
+    /Users/sparkss/.pyenv/versions/3.10.10/bin/python3 app/lyra/Lyra_gent.py > ../logs/agent_server.log 2>&1 &
+    SERVER_PID=$!
+    cd ..
+    echo "Lyra Agent Server PID: $SERVER_PID"
+else
+    echo "🔧 启动默认 Agent Server (端口: 8888)..."
+    cd agent_server
+    /Users/sparkss/.pyenv/versions/3.10.10/bin/python3 app.py > ../logs/agent_server.log 2>&1 &
+    SERVER_PID=$!
+    cd ..
+    echo "Agent Server PID: $SERVER_PID"
+fi
 sleep 5
 
 # 启动 Client 后端 (FastAPI)
@@ -46,8 +84,10 @@ cd ../..
 echo "Client 前端 PID: $CLIENT_FRONTEND_PID"
 sleep 8
 
-# 启动 Electron（可选）
-read -p "是否启动 Electron 桌面应用？ (y/n): " -n 1 -r
+# 默认打开网页，Electron 可选
+echo ""
+echo "🌐 默认将在网页中打开应用 (http://localhost:3000)"
+read -p "是否需要启动 Electron 桌面应用？ (y/n) [默认: n]: " -n 1 -r
 echo
 if [[ $REPLY =~ ^[Yy]$ ]]; then
     echo "🖥️  启动 Electron 应用..."
@@ -65,11 +105,22 @@ sleep 3
 
 # 检查 Agent Server
 echo "检查 Agent Server..."
-if netstat -an | grep -q ":8888.*LISTEN"; then
-    echo "✅ Agent Server (端口 8888) 正常启动"
+if [ "$AGENT_MODE" = "2" ]; then
+    # Lyra Agent uses port 8889
+    if netstat -an | grep -q ":8889.*LISTEN"; then
+        echo "✅ Lyra Agent Server (端口 8889) 正常启动"
+    else
+        echo "❌ Lyra Agent Server (端口 8889) 启动失败"
+        echo "查看日志: tail -f logs/agent_server.log"
+    fi
 else
-    echo "❌ Agent Server (端口 8888) 启动失败"
-    echo "查看日志: tail -f logs/agent_server.log"
+    # Default Agent uses port 8888
+    if netstat -an | grep -q ":8888.*LISTEN"; then
+        echo "✅ Agent Server (端口 8888) 正常启动"
+    else
+        echo "❌ Agent Server (端口 8888) 启动失败"
+        echo "查看日志: tail -f logs/agent_server.log"
+    fi
 fi
 
 # 检查 Client 后端
@@ -97,8 +148,18 @@ fi
 echo ""
 echo "🎉 启动完成！"
 echo ""
+if [ "$AGENT_MODE" = "2" ]; then
+    echo "🎯 当前模式: Lyra Agent (AI Prompt Optimizer)"
+else
+    echo "🔧 当前模式: 默认 Agent Server (Session Management)"
+fi
+echo ""
 echo "📍 服务地址:"
-echo "  🔧 Agent Server:    http://localhost:8888"
+if [ "$AGENT_MODE" = "2" ]; then
+    echo "  🎯 Lyra Agent:      http://localhost:8889"
+else
+    echo "  🔧 Agent Server:    http://localhost:8888"
+fi
 echo "  🐍 Client 后端:     http://localhost:5001"
 echo "  ⚡ Client 前端:     http://localhost:3000"
 echo ""
@@ -131,11 +192,13 @@ if [ ! -z "$ELECTRON_PID" ]; then
     echo $ELECTRON_PID > logs/electron.pid
 fi
 
-# 自动打开浏览器（可选）
+# 自动打开浏览器（默认行为）
 sleep 2
-read -p "是否在浏览器中打开应用？ (y/n): " -n 1 -r
+read -p "是否在浏览器中打开应用？ (y/n) [默认: y]: " -n 1 -r
 echo
-if [[ $REPLY =~ ^[Yy]$ ]]; then
+AUTO_OPEN=${REPLY:-y}
+if [[ $AUTO_OPEN =~ ^[Yy]$ ]]; then
+    echo "🌐 正在打开浏览器..."
     if command -v open > /dev/null; then
         open http://localhost:3000  # macOS
     elif command -v xdg-open > /dev/null; then
@@ -143,4 +206,6 @@ if [[ $REPLY =~ ^[Yy]$ ]]; then
     else
         echo "请手动打开: http://localhost:3000"
     fi
+else
+    echo "手动访问: http://localhost:3000"
 fi

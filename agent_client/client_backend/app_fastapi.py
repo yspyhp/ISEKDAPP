@@ -79,13 +79,37 @@ def format_session_response(session: SessionConfig) -> Dict[str, Any]:
 
 def format_message_response(message: MessageConfig) -> Dict[str, Any]:
     """Format message config for API response"""
-    return {
+    result = {
         "id": message.id,
         "sessionId": message.session_id,
         "content": message.content,
         "role": message.role,
         "timestamp": message.timestamp
     }
+    
+    # Include tool calls if present - 修复工具调用数据格式
+    if hasattr(message, 'tool_calls') and message.tool_calls:
+        # 确保工具调用数据格式正确，包含完整的小队信息
+        formatted_tool_calls = []
+        for tool_call in message.tool_calls:
+            if isinstance(tool_call, dict):
+                # 如果是字典格式，直接使用
+                formatted_tool_calls.append(tool_call)
+            else:
+                # 如果是其他格式，转换为标准格式
+                formatted_tool_calls.append({
+                    "id": getattr(tool_call, 'id', f"call_{uuid.uuid4().hex[:8]}"),
+                    "type": getattr(tool_call, 'type', 'function'),
+                    "function": {
+                        "name": getattr(tool_call, 'name', 'unknown'),
+                        "arguments": getattr(tool_call, 'arguments', {})
+                    }
+                })
+        result["toolInvocations"] = formatted_tool_calls
+        # 同时保存为 tool_calls 以保持一致性
+        result["tool_calls"] = formatted_tool_calls
+    
+    return result
 
 # --- API Endpoints ---
 
@@ -295,9 +319,23 @@ async def chat(request: Request):
             "content": [{"type": "text", "text": content}]
         }
 
-        # Add tool calls if present
+        # Add tool calls if present - 修复工具调用数据格式
         if tool_calls:
-            ai_message_dict["tool_calls"] = client.format_tool_calls_for_frontend(tool_calls)
+            # 确保工具调用数据包含完整的小队信息
+            formatted_tool_calls = []
+            for tool_call in tool_calls:
+                formatted_call = {
+                    "id": tool_call.get("id", f"call_{uuid.uuid4().hex[:8]}"),
+                    "type": tool_call.get("type", "function"),
+                    "function": {
+                        "name": tool_call.get("function", {}).get("name", "unknown"),
+                        "arguments": tool_call.get("function", {}).get("arguments", {})
+                    }
+                }
+                formatted_tool_calls.append(formatted_call)
+            ai_message_dict["tool_calls"] = formatted_tool_calls
+            # 同时保存为 toolInvocations 以保持兼容性
+            ai_message_dict["toolInvocations"] = formatted_tool_calls
         
         # Prepare response data
         response_data = {
@@ -363,19 +401,32 @@ async def _create_streaming_response(response_data: Dict[str, Any]):
     if "tool_calls" in response_data["aiMessage"]:
         tool_calls = response_data["aiMessage"]["tool_calls"]
         
+        # 调试信息
+        logger.info(f"🔍 Streaming tool_calls: {tool_calls}")
+        
         for tool_call in tool_calls:
             tool_name = tool_call.get("function", {}).get("name", "unknown")
             call_id = tool_call.get("id", f"call_{uuid.uuid4().hex[:8]}")
             
-            # Regular tool call - now all handled by server including team-formation
-            formatted_tool_call = {
-                "type": "tool-call",
-                "toolCallId": call_id,
-                "toolName": tool_name,
-                "args": tool_call.get("function", {}).get("arguments", {})
-            }
-            yield f'0:{json.dumps(formatted_tool_call)}\n'
-            await asyncio.sleep(0.1)
+            # 调试信息
+            logger.info(f"🔍 Processing tool_call: {tool_call}")
+            logger.info(f"🔍 tool_name: {tool_name}")
+            logger.info(f"🔍 call_id: {call_id}")
+            
+            # Special handling for team-formation - simulate streaming progress
+            if tool_name == "team-formation":
+                async for chunk in _simulate_team_formation_streaming(call_id, tool_call):
+                    yield chunk
+            else:
+                # Regular tool call
+                formatted_tool_call = {
+                    "type": "tool-call",
+                    "toolCallId": call_id,
+                    "toolName": tool_name,
+                    "args": tool_call.get("function", {}).get("arguments", {})
+                }
+                yield f'0:{json.dumps(formatted_tool_call)}\n'
+                await asyncio.sleep(0.1)
     
     # Finish response
     finish_data = {
@@ -387,6 +438,96 @@ async def _create_streaming_response(response_data: Dict[str, Any]):
     }
     yield f'd:{json.dumps(finish_data)}\n'
 
+async def _simulate_team_formation_streaming(call_id: str, tool_call: Dict[str, Any]):
+    """Simulate streaming progress for team formation using server data"""
+    import asyncio
+    import json
+    
+    # Get initial data from server response
+    server_args = tool_call.get("function", {}).get("arguments", {})
+    initial_members = server_args.get("members", [])
+    
+    # 调试信息
+    logger.info(f"🔍 Client backend received tool_call: {tool_call}")
+    logger.info(f"🔍 server_args: {server_args}")
+    logger.info(f"🔍 initial_members: {initial_members}")
+    logger.info(f"🔍 initial_members length: {len(initial_members)}")
+    
+    # 如果服务器已经提供了完整的小队数据，直接返回完成状态
+    if server_args.get("status") == "completed" and initial_members:
+        final_args = {
+            **server_args,
+            "members": initial_members,
+            "teamStats": {
+                "totalMembers": len(initial_members),
+                "skills": ["AI图片创作", "数据分析", "智能问答", "流程编排"]
+            }
+        }
+        final_call = {
+            "type": "tool-call",
+            "toolCallId": call_id,
+            "toolName": "team-formation", 
+            "args": final_args
+        }
+        yield f'0:{json.dumps(final_call)}\n'
+        return
+    
+    # Initial call with starting progress
+    initial_call = {
+        "type": "tool-call",
+        "toolCallId": call_id,
+        "toolName": "team-formation",
+        "args": {
+            **server_args,
+            "status": "recruiting",
+            "progress": 0.1,
+            "currentStep": "开始招募小队成员...",
+            "members": []
+        }
+    }
+    yield f'0:{json.dumps(initial_call)}\n'
+    await asyncio.sleep(0.8)
+    
+    # Simulate recruitment progress for each member
+    current_members = []
+    for i, member in enumerate(initial_members):
+        current_members.append(member)
+        progress = 0.2 + (i + 1) * 0.15
+        step = f"已招募 {member['name']} ({member['role']})..."
+        
+        update_call = {
+            "type": "tool-call", 
+            "toolCallId": call_id,
+            "toolName": "team-formation",
+            "args": {
+                **server_args,
+                "status": "recruiting",
+                "progress": progress,
+                "currentStep": step,
+                "members": current_members.copy()
+            }
+        }
+        yield f'0:{json.dumps(update_call)}\n'
+        await asyncio.sleep(0.6)
+    
+    # Final completion call
+    final_call = {
+        "type": "tool-call",
+        "toolCallId": call_id,
+        "toolName": "team-formation", 
+        "args": {
+            **server_args,
+            "status": "completed",
+            "progress": 1.0,
+            "currentStep": "小队组建完成！",
+            "members": current_members,
+            "teamStats": {
+                "totalMembers": len(current_members),
+                "skills": ["AI图片创作", "数据分析", "智能问答", "流程编排"]
+            }
+        }
+    }
+    yield f'0:{json.dumps(final_call)}\n'
 
 @app.get("/health")
 async def health_check():
