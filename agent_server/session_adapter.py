@@ -44,80 +44,56 @@ class SessionAdapter(Adapter):
             if not parsed_data.get("success"):
                 return self._error_response("Failed to parse message")
             
-            message_type = self.message_handler.get_message_type(parsed_data)
-            
             if self.session_manager or self.task_manager:
-                return self._process_with_plugins(prompt, message_type, parsed_data)
+                return self._process_with_plugins(parsed_data)
             else:
-                return self._process_simple(prompt, message_type, parsed_data)
+                return self._process_simple(parsed_data)
                 
         except Exception as e:
             log.error(f"Adapter error: {e}")
             return self._error_response(str(e))
 
-    def _process_simple(self, prompt: str, message_type: str, parsed_data: Dict[str, Any]) -> str:
+    def _process_simple(self, parsed_data: Dict[str, Any]) -> str:
+        message_type = parsed_data.get("type")
         if message_type == "chat":
+            prompt = parsed_data["data"].get("user_message", "")
             return self._team_run(prompt)
         elif message_type == "agent_config_request":
             return self._agent_config(parsed_data)
         else:
             return self._error_response(f"Type '{message_type}' requires plugins")
 
-    def _process_with_plugins(self, prompt: str, message_type: str, parsed_data: Dict[str, Any]) -> str:
-        import asyncio
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                import concurrent.futures
-                with concurrent.futures.ThreadPoolExecutor() as executor:
-                    future = executor.submit(
-                        asyncio.run, 
-                        self._plugin_chain(prompt, message_type, parsed_data)
-                    )
-                    return future.result()
-            else:
-                return asyncio.run(self._plugin_chain(prompt, message_type, parsed_data))
-        except Exception as e:
-            log.error(f"Plugin processing error: {e}")
-            return self._error_response(str(e))
+    def _process_with_plugins(self, parsed_data: Dict[str, Any]) -> str:
+        return self._plugin_chain(parsed_data)
 
-    async def _plugin_chain(self, prompt: str, message_type: str, parsed_data: Dict[str, Any]) -> str:
-        try:
-            if self.session_manager:
-                if message_type in ["chat", "session_lifecycle"]:
-                    if message_type == "chat":
-                        if hasattr(self.message_handler, 'set_agent_runner'):
-                            self.message_handler.set_agent_runner(self._team_run)
-                        if hasattr(self.message_handler, 'set_session_manager'):
-                            self.message_handler.set_session_manager(self.session_manager)
-                        response_data = await self.message_handler.handle_chat_message(parsed_data)
-                    else:
-                        response_data = await self._handle_session_lifecycle(parsed_data)
-                    return self.message_handler.format_response(response_data)
-            
-            if message_type == "task" and self.task_manager:
-                response_data = await self._handle_task_message(parsed_data)
+    def _plugin_chain(self, parsed_data: Dict[str, Any]) -> str:
+        message_type = parsed_data.get("type")
+        
+        if self.session_manager:
+            if message_type in ["chat", "session_lifecycle"]:
+                if message_type == "chat":
+                    self.message_handler.set_agent_runner(self._team_run)
+                    self.message_handler.set_session_manager(self.session_manager)
+                    response_data = self.message_handler.handle_chat_message(parsed_data)
+                else:
+                    response_data = self._handle_session_lifecycle(parsed_data)
                 return self.message_handler.format_response(response_data)
-            
-            if message_type == "chat":
-                return self._team_run(prompt)
-            elif message_type == "agent_config_request":
-                response_data = await self._handle_agent_config_request(parsed_data)
-                return self.message_handler.format_response(response_data)
-            
-            return self._error_response(f"Unsupported message type: {message_type}")
-            
-        except Exception as e:
-            log.error(f"Plugin chain error: {e}")
-            return self._error_response(str(e))
+        
+        if message_type == "task" and self.task_manager:
+            response_data = self._handle_task_message(parsed_data)
+            return self.message_handler.format_response(response_data)
+        
+        if message_type == "chat":
+            prompt = parsed_data["data"].get("user_message", "")
+            return self._team_run(prompt)
+        elif message_type == "agent_config_request":
+            response_data = self._handle_agent_config_request(parsed_data)
+            return self.message_handler.format_response(response_data)
+        
+        return self._error_response(f"Unsupported message type: {message_type}")
 
     def _team_run(self, prompt: str) -> str:
-        if self.agent and hasattr(self.agent, 'run'):
-            return self.agent.run(prompt)
-        else:
-            return self.message_handler.format_response(
-                create_agent_response(success=True, content=f"Echo: {prompt}")
-            )
+        return self.agent.run(prompt)
 
     def _agent_config(self, parsed_data: Dict[str, Any]) -> str:
         data = parsed_data["data"]
@@ -134,7 +110,7 @@ class SessionAdapter(Adapter):
         return self.message_handler.format_response(response)
 
 
-    async def _handle_session_lifecycle(self, parsed_data: Dict[str, Any]) -> Dict[str, Any]:
+    def _handle_session_lifecycle(self, parsed_data: Dict[str, Any]) -> Dict[str, Any]:
         try:
             data = parsed_data["data"]
             action = data.get("action", "")
@@ -154,7 +130,7 @@ class SessionAdapter(Adapter):
             log.error(f"Error handling session lifecycle: {e}")
             return create_agent_response(success=False, error=str(e))
 
-    async def _handle_task_message(self, parsed_data: Dict[str, Any]) -> Dict[str, Any]:
+    def _handle_task_message(self, parsed_data: Dict[str, Any]) -> Dict[str, Any]:
         try:
             data = parsed_data["data"]
             task_type = data.get("task_type")
@@ -166,14 +142,14 @@ class SessionAdapter(Adapter):
             if not self.task_manager.validate_task_data(task_type, task_data):
                 return {"success": False, "error": "Invalid task data"}
             
-            result = await self.task_manager.execute_task(task_type, task_data)
+            result = self.task_manager.execute_task(task_type, task_data)
             return result
             
         except Exception as e:
             log.error(f"Error handling task message: {e}")
             return {"success": False, "error": str(e)}
 
-    async def _handle_agent_config_request(self, parsed_data: Dict[str, Any]) -> Dict[str, Any]:
+    def _handle_agent_config_request(self, parsed_data: Dict[str, Any]) -> Dict[str, Any]:
         try:
             data = parsed_data["data"]
             node_id = data.get("node_id")

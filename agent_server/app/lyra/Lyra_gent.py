@@ -175,8 +175,8 @@ def main():
 
     # 2. Create a Team and add the Agent as a member
     agent_team = IsekTeam(
-        name="LV9 Agent Team",
-        description="A team hosting a single, powerful agent.",
+        name="Lyra the AI Prompt Optimizer",
+        description="A master-level AI prompt optimization specialist.",
         members=[memory_tool_agent]
     )
 
