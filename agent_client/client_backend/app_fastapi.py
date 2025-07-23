@@ -33,6 +33,18 @@ async def lifespan(app: FastAPI):
         client = get_client()
         await initialize_client()
         logger.info("ISEK client initialized successfully")
+        
+        # Fetch existing sessions from agent servers
+        try:
+            logger.info("Fetching existing sessions from agent servers...")
+            sessions = await client.get_all_sessions_distributed()
+            logger.info(f"Successfully fetched {len(sessions)} sessions from agent servers")
+            for session in sessions:
+                logger.info(f"- Session {session.id}: {session.title} (Agent: {session.agent_name})")
+        except Exception as e:
+            logger.warning(f"Failed to fetch sessions from agent servers: {e}")
+            logger.info("Continuing with empty session cache...")
+        
         yield
     except Exception as e:
         logger.error(f"Failed to initialize ISEK client: {e}")
@@ -157,6 +169,22 @@ async def get_sessions(agentId: Optional[str] = None, userId: Optional[str] = No
     except Exception as e:
         logger.error(f"Failed to get sessions: {e}")
         raise HTTPException(status_code=500, detail="Failed to get sessions")
+
+@app.post("/api/sessions/sync")
+async def sync_sessions_from_agents():
+    """Sync sessions from all agent servers"""
+    try:
+        logger.info("Manual session sync requested")
+        sessions = await client.get_all_sessions_distributed()
+        logger.info(f"Synced {len(sessions)} sessions from agent servers")
+        return {
+            "message": "Sessions synced successfully",
+            "count": len(sessions),
+            "sessions": [format_session_response(session) for session in sessions]
+        }
+    except Exception as e:
+        logger.error(f"Failed to sync sessions: {e}")
+        raise HTTPException(status_code=500, detail="Failed to sync sessions")
 
 @app.post("/api/sessions")
 async def create_session(request: Dict[str, Any]):

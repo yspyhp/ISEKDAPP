@@ -4,7 +4,7 @@ import { AssistantRuntimeProvider, useExternalStoreRuntime, ThreadMessageLike, A
 import { ReactNode, useEffect, useState } from "react";
 import { chatApi, messagesApi } from "@/lib/api";
 import { ChatSession } from "@/lib/types";
-import { TeamFormationToolUI } from "@/components/assistant-ui/tool-ui";
+import { TeamFormationToolUI, LoadingSpinnerToolUI } from "@/components/assistant-ui/tool-ui";
 
 // 工具调用更新函数
 function updateToolCall(content: any[], newToolCall: any) {
@@ -34,6 +34,8 @@ export function MyRuntimeProvider({
 }) {
   const [messages, setMessages] = useState<ThreadMessageLike[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isRunning, setIsRunning] = useState(false);
+  const [abortController, setAbortController] = useState<AbortController | null>(null);
 
   // 拉取历史消息，适配后端格式
   useEffect(() => {
@@ -188,9 +190,23 @@ export function MyRuntimeProvider({
       // 本地展示用户消息
       setMessages(msgs => [...msgs, { role: "user", content: [{ type: "text", text: userText }] }]);
 
+      // 创建新的 AbortController 用于取消操作
+      const controller = new AbortController();
+      setAbortController(controller);
+      setIsRunning(true);
+
       // 立即显示 AI 回复的 typing 状态
       let aiText = "";
-      let aiMsg: ThreadMessageLike = { role: "assistant", content: [{ type: "text", text: "🤔 正在思考..." }] };
+      let aiMsg: ThreadMessageLike = { 
+        role: "assistant", 
+        content: [{ 
+          type: "tool-call",
+          toolCallId: "loading-spinner",
+          toolName: "loading-spinner",
+          args: {},
+          argsText: "{}"
+        }] 
+      };
       setMessages(msgs => [...msgs, aiMsg]);
       
       // 设置超时处理
@@ -199,7 +215,13 @@ export function MyRuntimeProvider({
           const msgsCopy = [...msgs];
           const lastIndex = msgsCopy.length - 1;
           if (lastIndex >= 0 && msgsCopy[lastIndex].role === "assistant" && 
-              msgsCopy[lastIndex].content[0]?.text === "🤔 正在思考...") {
+              Array.isArray(msgsCopy[lastIndex].content) && 
+              msgsCopy[lastIndex].content[0] && 
+              typeof msgsCopy[lastIndex].content[0] === "object" &&
+              "type" in msgsCopy[lastIndex].content[0] &&
+              msgsCopy[lastIndex].content[0].type === "tool-call" &&
+              "toolName" in msgsCopy[lastIndex].content[0] &&
+              msgsCopy[lastIndex].content[0].toolName === "loading-spinner") {
             msgsCopy[lastIndex] = {
               ...msgsCopy[lastIndex],
               content: [{ type: "text", text: "连接超时，请稍后重试..." }]
@@ -207,6 +229,8 @@ export function MyRuntimeProvider({
           }
           return msgsCopy;
         });
+        setIsRunning(false);
+        setAbortController(null);
       }, 10000); // 10秒超时
       
     try {
@@ -214,7 +238,8 @@ export function MyRuntimeProvider({
       userText,
       session.id,
       session.agentId,
-      allMessages // 发送完整历史+新消息
+      allMessages, // 发送完整历史+新消息
+      controller.signal // 传递 abort signal
     )) {
       if (chunk.type === "text") {
         // 第一个文本块到达时，清除 typing 状态
@@ -306,12 +331,18 @@ export function MyRuntimeProvider({
     }
     // 清除超时定时器
     clearTimeout(timeoutId);
+    setIsRunning(false);
+    setAbortController(null);
     } catch (streamError) {
       clearTimeout(timeoutId);
+      setIsRunning(false);
+      setAbortController(null);
       throw streamError;
     }
     } catch (error) {
       console.error('发送消息错误:', error);
+      setIsRunning(false);
+      setAbortController(null);
       // 更新最后一条 AI 消息为错误状态
       setMessages(msgs => {
         const msgsCopy = [...msgs];
@@ -333,10 +364,217 @@ export function MyRuntimeProvider({
     }
   };
 
+  // 添加 onCancel 处理器以支持取消正在进行的消息生成
+  const onCancel = async () => {
+    if (abortController) {
+      abortController.abort();
+      setIsRunning(false);
+      setAbortController(null);
+      
+      // 更新最后一条 AI 消息为取消状态
+      setMessages(msgs => {
+        const msgsCopy = [...msgs];
+        const lastIndex = msgsCopy.length - 1;
+        if (lastIndex >= 0 && msgsCopy[lastIndex].role === "assistant") {
+          msgsCopy[lastIndex] = {
+            ...msgsCopy[lastIndex],
+            content: [{ 
+              type: "text", 
+              text: "消息生成已取消" 
+            }]
+          };
+        }
+        return msgsCopy;
+      });
+    }
+  };
+
+  // 添加 onReload 处理器以支持消息重新加载功能
+  const onReload = async (parentId: string | null, config: any) => {
+    try {
+      // 找到要重新加载的消息的父消息
+      const parentIndex = parentId ? messages.findIndex(m => m.id === parentId) : -1;
+      const startIndex = parentIndex >= 0 ? parentIndex + 1 : 0;
+      
+      // 移除从父消息之后的所有消息
+      const messagesToKeep = messages.slice(0, startIndex);
+      setMessages(messagesToKeep);
+      
+      // 如果父消息是用户消息，重新发送它
+      if (parentIndex >= 0 && messages[parentIndex].role === "user") {
+        const userMessage = messages[parentIndex];
+        const userText = Array.isArray(userMessage.content) && 
+          userMessage.content[0] && 
+          typeof userMessage.content[0] === "object" &&
+          "type" in userMessage.content[0] &&
+          userMessage.content[0].type === "text" &&
+          "text" in userMessage.content[0] 
+            ? userMessage.content[0].text 
+            : "";
+        
+        if (userText) {
+          // 构造历史消息
+          const history = messagesToKeep.map(m => ({
+            role: m.role,
+            content: (m.content && m.content[0] && typeof m.content[0] === "object" && "text" in m.content[0]) ? m.content[0].text : "",
+          }));
+          const allMessages = [...history] as any;
+
+          // 立即显示 AI 回复的 typing 状态
+          let aiText = "";
+          let aiMsg: ThreadMessageLike = { 
+            role: "assistant", 
+            content: [{ 
+              type: "tool-call",
+              toolCallId: "loading-spinner",
+              toolName: "loading-spinner",
+              args: {},
+              argsText: "{}"
+            }] 
+          };
+          setMessages(msgs => [...msgs, aiMsg]);
+          
+          // 设置超时处理
+          const timeoutId = setTimeout(() => {
+            setMessages(msgs => {
+              const msgsCopy = [...msgs];
+              const lastIndex = msgsCopy.length - 1;
+                      if (lastIndex >= 0 && msgsCopy[lastIndex].role === "assistant" && 
+            Array.isArray(msgsCopy[lastIndex].content) && 
+            msgsCopy[lastIndex].content[0] && 
+            typeof msgsCopy[lastIndex].content[0] === "object" &&
+            "type" in msgsCopy[lastIndex].content[0] &&
+            msgsCopy[lastIndex].content[0].type === "tool-call" &&
+            "toolName" in msgsCopy[lastIndex].content[0] &&
+            msgsCopy[lastIndex].content[0].toolName === "loading-spinner") {
+          msgsCopy[lastIndex] = {
+            ...msgsCopy[lastIndex],
+            content: [{ type: "text", text: "连接超时，请稍后重试..." }]
+          };
+        }
+              return msgsCopy;
+            });
+          }, 10000); // 10秒超时
+          
+          try {
+            for await (const chunk of chatApi.sendMessageStream(
+              userText,
+              session.id,
+              session.agentId,
+              allMessages
+            )) {
+              if (chunk.type === "text") {
+                // 第一个文本块到达时，清除 typing 状态
+                if (aiText === "") {
+                  aiMsg = { ...aiMsg, content: [] };
+                }
+                aiText += chunk.text;
+                aiMsg = { ...aiMsg, content: [{ type: "text", text: aiText }, ...(Array.isArray(aiMsg.content) ? aiMsg.content.filter(p => p.type !== 'text') : [])] };
+                setMessages(msgs => {
+                  const idx = [...msgs].reverse().findIndex(m => m.role === "assistant" && !m.id);
+                  if (idx !== -1) {
+                    const msgsCopy = [...msgs];
+                    msgsCopy[msgs.length - 1 - idx] = aiMsg;
+                    return msgsCopy;
+                  }
+                  return msgs;
+                });
+              } else if (chunk.type === "function_call") {
+                // 转换function_call为tool-call格式
+                const functionCallChunk = chunk as any;
+                const toolCallPart = {
+                  type: "tool-call",
+                  toolCallId: functionCallChunk.id,
+                  toolName: functionCallChunk.name,
+                  args: functionCallChunk.arguments,
+                  argsText: typeof functionCallChunk.arguments === 'string' ? functionCallChunk.arguments : JSON.stringify(functionCallChunk.arguments, null, 2)
+                };
+                aiMsg = { ...aiMsg, content: [...(Array.isArray(aiMsg.content) ? aiMsg.content : []), toolCallPart] };
+                setMessages(msgs => {
+                  const idx = [...msgs].reverse().findIndex(m => m.role === "assistant" && !m.id);
+                  if (idx !== -1) {
+                    const msgsCopy = [...msgs];
+                    msgsCopy[msgs.length - 1 - idx] = aiMsg;
+                    return msgsCopy;
+                  }
+                  return msgs;
+                });
+              } else if (chunk.type === "tool-call") {
+                // 处理工具调用流式更新
+                let toolArgs = chunk.args;
+                
+                if (chunk.toolName === 'team-formation' && toolArgs) {
+                  toolArgs = {
+                    ...toolArgs,
+                    members: toolArgs.members || [],
+                    status: toolArgs.status || 'completed',
+                    progress: toolArgs.progress || 1.0,
+                    currentStep: toolArgs.currentStep || '小队组建完成！',
+                    teamStats: toolArgs.teamStats || {
+                      totalMembers: (toolArgs.members || []).length,
+                      skills: ['AI图片创作', '数据分析', '智能问答', '流程编排']
+                    }
+                  };
+                }
+                
+                const toolCallChunk = {
+                  ...chunk,
+                  args: toolArgs,
+                  argsText: typeof toolArgs === 'string' ? toolArgs : JSON.stringify(toolArgs, null, 2)
+                };
+                
+                aiMsg = { ...aiMsg, content: updateToolCall(Array.isArray(aiMsg.content) ? aiMsg.content : [], toolCallChunk) };
+                setMessages(msgs => {
+                  const idx = [...msgs].reverse().findIndex(m => m.role === "assistant" && !m.id);
+                  if (idx !== -1) {
+                    const msgsCopy = [...msgs];
+                    msgsCopy[msgs.length - 1 - idx] = aiMsg;
+                    return msgsCopy;
+                  }
+                  return msgs;
+                });
+              } else {
+                console.warn('Unsupported assistant message part type:', chunk.type, chunk);
+                continue;
+              }
+            }
+            clearTimeout(timeoutId);
+          } catch (streamError) {
+            clearTimeout(timeoutId);
+            throw streamError;
+          }
+        }
+      }
+    } catch (error) {
+      console.error('重新加载消息错误:', error);
+      // 更新最后一条 AI 消息为错误状态
+      setMessages(msgs => {
+        const msgsCopy = [...msgs];
+        const lastIndex = msgsCopy.length - 1;
+        if (lastIndex >= 0 && msgsCopy[lastIndex].role === "assistant") {
+          msgsCopy[lastIndex] = {
+            ...msgsCopy[lastIndex],
+            content: [{ 
+              type: "text", 
+              text: `重新加载错误: ${error instanceof Error ? error.message : String(error)}` 
+            }]
+          };
+        }
+        return msgsCopy;
+      });
+    } finally {
+      // 消息重新加载后通知父组件刷新 sessions
+      if (onMessageSent) onMessageSent();
+    }
+  };
+
   const runtime = useExternalStoreRuntime<ThreadMessageLike>({
     messages,
     setMessages,
     onNew,
+    onReload, // 添加 onReload 处理器
+    onCancel, // 添加 onCancel 处理器
+    isRunning, // 添加 isRunning 状态
     convertMessage: (msg: any) => msg,
   });
 
@@ -347,6 +585,7 @@ export function MyRuntimeProvider({
   return (
     <AssistantRuntimeProvider runtime={runtime}>
       <TeamFormationToolUI />
+      <LoadingSpinnerToolUI />
       {children}
     </AssistantRuntimeProvider>
   );

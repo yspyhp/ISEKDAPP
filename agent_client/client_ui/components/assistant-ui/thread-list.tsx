@@ -133,6 +133,7 @@ interface ThreadListItemsProps {
   currentSession?: ChatSession | null;
   onSessionSelect?: (session: ChatSession) => void;
   onDeleteSession?: (sessionId: string) => void;
+  deletingSessions?: Set<string>;
 }
 
 const ThreadListItems: FC<ThreadListItemsProps> = ({
@@ -140,6 +141,7 @@ const ThreadListItems: FC<ThreadListItemsProps> = ({
   currentSession,
   onSessionSelect,
   onDeleteSession,
+  deletingSessions,
 }) => {
   if (sessions.length === 0) {
     return (

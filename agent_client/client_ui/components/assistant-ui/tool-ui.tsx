@@ -1,6 +1,16 @@
 import { makeAssistantTool, makeAssistantToolUI } from "@assistant-ui/react";
 import { useState } from "react";
 
+// 加载动画组件
+const LoadingSpinner = () => {
+  return (
+    <div className="flex items-center gap-3 p-3">
+      <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500"></div>
+      <span className="text-sm text-muted-foreground">正在思考...</span>
+    </div>
+  );
+};
+
 // 成员卡片组件
 const MemberCard = ({ member }: { member: any }) => {
   const [isHovered, setIsHovered] = useState(false);
@@ -79,6 +89,12 @@ const teamFormationSchema = {
     }
   }
 };
+
+// 创建加载动画工具UI
+export const LoadingSpinnerToolUI = makeAssistantToolUI({
+  toolName: "loading-spinner",
+  render: () => <LoadingSpinner />
+});
 
 // 创建工具UI
 export const TeamFormationToolUI = makeAssistantToolUI({

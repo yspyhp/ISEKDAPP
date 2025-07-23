@@ -75,6 +75,17 @@ export const sessionsApi = {
       method: 'DELETE',
     });
   },
+
+  // Sync sessions from agent servers
+  async syncSessions(): Promise<{
+    message: string;
+    count: number;
+    sessions: ChatSession[];
+  }> {
+    return apiRequest('/api/sessions/sync', {
+      method: 'POST',
+    });
+  },
 };
 
 // Message API
@@ -115,7 +126,7 @@ export const chatApi = {
     
     const request: SendMessageRequest = {
       agentId,
-      address: agent.address,
+      address: agent.node_id,
       sessionId,
       messages,
       system: `${agent.knowledge}\n\nRoutine: ${agent.routine}`,
@@ -129,12 +140,13 @@ export const chatApi = {
     message: string,
     sessionId: string,
     agentId: string,
-    messages: ChatMessage[] = []
+    messages: ChatMessage[] = [],
+    signal?: AbortSignal
   ) {
     const agent = await agentsApi.getAgent(agentId);
     const request: SendMessageRequest = {
       agentId,
-      address: agent.address,
+      address: agent.node_id,
       sessionId,
       messages,
       system: `${agent.knowledge}\n\nRoutine: ${agent.routine}`,
@@ -146,6 +158,7 @@ export const chatApi = {
         'Accept': 'text/event-stream',
       },
       body: JSON.stringify(request),
+      signal, // 添加 abort signal 支持
     });
     if (!response.body) throw new Error('No response body for SSE');
     const reader = response.body.getReader();

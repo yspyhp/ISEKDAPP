@@ -4,6 +4,7 @@ from isek.adapter.base import Adapter, AdapterCard
 from typing import Dict, Any, Optional
 import json
 import dotenv
+from datetime import datetime
 from isek.utils.log import LoggerManager, log
 
 # Import modular components
@@ -93,7 +94,41 @@ class SessionAdapter(Adapter):
         return self._error_response(f"Unsupported message type: {message_type}")
 
     def _team_run(self, prompt: str) -> str:
-        return self.agent.run(prompt)
+        try:
+            result = self.agent.run(prompt)
+            return result
+            
+        except ValueError as ve:
+            log.error(f"Team configuration error: {ve}")
+            return self._create_error_response(f"Team configuration error: {str(ve)}")
+            
+        except AttributeError as ae:
+            log.error(f"Team setup error: {ae}")
+            return self._create_error_response(f"Team setup error: {str(ae)}")
+            
+        except Exception as e:
+            log.error(f"Team execution error: {e}")
+            import traceback
+            log.error(f"Traceback: {traceback.format_exc()}")
+            return self._create_error_response(f"Team execution error: {str(e)}")
+    
+    def _create_error_response(self, error_message: str) -> str:
+        try:
+            from shared.message_formats import create_agent_response
+            error_response = create_agent_response(
+                success=False,
+                content=f"Sorry, team encountered an error: {error_message}. Please try again or contact administrator.",
+                error=error_message
+            )
+            return self.message_handler.format_response(error_response) if self.message_handler else json.dumps(error_response, ensure_ascii=False)
+        except ImportError:
+            error_response = {
+                "success": False,
+                "content": f"Sorry, team encountered an error: {error_message}. Please try again or contact administrator.",
+                "error": error_message,
+                "timestamp": datetime.now().isoformat()
+            }
+            return self.message_handler.format_response(error_response) if self.message_handler else json.dumps(error_response, ensure_ascii=False)
 
     def _agent_config(self, parsed_data: Dict[str, Any]) -> str:
         data = parsed_data["data"]
@@ -170,31 +205,89 @@ class SessionAdapter(Adapter):
             return {"success": False, "error": str(e)}
 
     def get_adapter_card(self) -> AdapterCard:
+        # Get base agent information
+        agent_name = "Unknown Agent"
+        agent_bio = "AI agent with enhanced capabilities"
+        agent_lore = "Enhanced with session and task management capabilities"
+        agent_knowledge = "Session management, task orchestration"
+        agent_routine = "Process messages with session context and coordinate tasks"
+        
+        # Try to get agent's own adapter card first
         if self.agent and hasattr(self.agent, 'get_adapter_card'):
-            agent_card = self.agent.get_adapter_card()
-            return AdapterCard(
-                name=f"{agent_card.name} (Session-Enabled)" if agent_card.name else "Session-Enabled Agent",
-                bio=agent_card.bio or "Agent with session management capabilities",
-                lore=agent_card.lore or "Enhanced with session and task management",
-                knowledge=agent_card.knowledge or "Session management, task orchestration",
-                routine=agent_card.routine or "Process messages with session context"
-            )
-        elif self.agent and hasattr(self.agent, 'name'):
-            return AdapterCard(
-                name=f"{self.agent.name} (Session-Enabled)",
-                bio="Agent with session management capabilities",
-                lore="Enhanced with session and task management",
-                knowledge="Session management, task orchestration",
-                routine="Process messages with session context"
-            )
-        else:
-            return AdapterCard(
-                name="Session Management Agent",
-                bio="AI agent specialized in session and task management",
-                lore="Provides session context and task orchestration for agent teams",
-                knowledge="Session management, task orchestration, message parsing",
-                routine="Parse messages, manage sessions, coordinate tasks, and process through agent teams"
-            )
+            try:
+                agent_card = self.agent.get_adapter_card()
+                if agent_card:
+                    agent_name = agent_card.name or agent_name
+                    agent_bio = agent_card.bio or agent_bio
+                    agent_lore = agent_card.lore or agent_lore
+                    agent_knowledge = agent_card.knowledge or agent_knowledge
+                    agent_routine = agent_card.routine or agent_routine
+            except Exception as e:
+                log.warning(f"Failed to get agent's adapter card: {e}")
+        
+        # Fallback to agent's direct attributes
+        if self.agent:
+            # Try to get agent name from various possible attributes
+            for attr_name in ['name', 'agent_name', 'title', 'display_name']:
+                if hasattr(self.agent, attr_name):
+                    try:
+                        attr_value = getattr(self.agent, attr_name)
+                        if attr_value and isinstance(attr_value, str):
+                            agent_name = attr_value
+                            break
+                    except Exception:
+                        continue
+            
+            # Try to get agent description/bio from various attributes
+            for attr_name in ['bio', 'description', 'about', 'summary']:
+                if hasattr(self.agent, attr_name):
+                    try:
+                        attr_value = getattr(self.agent, attr_name)
+                        if attr_value and isinstance(attr_value, str):
+                            agent_bio = attr_value
+                            break
+                    except Exception:
+                        continue
+            
+            # Try to get agent's knowledge/expertise
+            for attr_name in ['knowledge', 'expertise', 'skills', 'capabilities']:
+                if hasattr(self.agent, attr_name):
+                    try:
+                        attr_value = getattr(self.agent, attr_name)
+                        if attr_value and isinstance(attr_value, str):
+                            agent_knowledge = attr_value
+                            break
+                    except Exception:
+                        continue
+        
+        # Enhance with session management capabilities
+        enhanced_name = f"{agent_name} (Session-Enabled)"
+        enhanced_bio = f"{agent_bio}. Enhanced with session management capabilities."
+        enhanced_lore = f"{agent_lore}. Provides persistent context and state management across conversations."
+        
+        # Build enhanced knowledge based on available managers
+        enhanced_knowledge_parts = [agent_knowledge]
+        if self.session_manager:
+            enhanced_knowledge_parts.append("session management")
+        if self.task_manager:
+            enhanced_knowledge_parts.append("task orchestration")
+        enhanced_knowledge = ", ".join(enhanced_knowledge_parts)
+        
+        # Build enhanced routine based on capabilities
+        routine_parts = [agent_routine]
+        if self.session_manager:
+            routine_parts.append("maintain session context")
+        if self.task_manager:
+            routine_parts.append("coordinate complex tasks")
+        enhanced_routine = f"{', '.join(routine_parts)}"
+        
+        return AdapterCard(
+            name=enhanced_name,
+            bio=enhanced_bio,
+            lore=enhanced_lore,
+            knowledge=enhanced_knowledge,
+            routine=enhanced_routine
+        )
     
     def get_agent_config(self, node_id: str) -> Dict[str, Any]:
         adapter_card = self.get_adapter_card()

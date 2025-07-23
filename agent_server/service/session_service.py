@@ -25,7 +25,7 @@ class SessionService:
         if not session.creatorId:
             raise ValueError("creator_id is required")
         
-        # 设置默认时间戳
+        # Set default timestamp
         if not session.createdAt:
             session.createdAt = datetime.now().isoformat()
         if not session.updatedAt:
@@ -38,14 +38,14 @@ class SessionService:
         if not creator_id:
             raise ValueError("creator_id is required")
             
-        # 先验证会话是否属于该用户
+        # Verify session belongs to user
         sessions = self.session_mapper.get_sessions(creator_id)
         if not any(s.id == session_id for s in sessions):
             raise PermissionError("Unauthorized access to session")
             
-        # 先删除会话中的消息
+        # Delete messages in session first
         self.message_mapper.delete_messages_by_session(session_id)
-        # 再删除会话
+        # Then delete session
         return self.session_mapper.delete_session(session_id, creator_id)
     
     def get_session_messages(self, session_id: str, creator_id: str) -> List[Message]:
@@ -53,7 +53,7 @@ class SessionService:
         if not creator_id:
             raise ValueError("creator_id is required")
             
-        # 验证会话是否属于该用户
+        # Verify session belongs to user
         sessions = self.session_mapper.get_sessions(creator_id)
         if not any(s.id == session_id for s in sessions):
             raise PermissionError("Unauthorized access to session messages")
@@ -67,12 +67,12 @@ class SessionService:
         if not message.sessionId:
             raise ValueError("session_id is required")
             
-        # 验证会话是否属于该用户
+        # Verify session belongs to user
         # sessions = self.session_mapper.get_sessions(creator_id)
         # if not any(s.id == message.session_id for s in sessions):
         #     raise PermissionError("Unauthorized access to session")
             
-        # 设置默认时间戳
+        # Set default timestamp
         if not message.timestamp:
             message.timestamp = datetime.now().isoformat()
             

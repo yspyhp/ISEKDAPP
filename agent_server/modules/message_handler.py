@@ -171,7 +171,15 @@ class DefaultMessageHandler(BaseMessageHandler):
             
         except Exception as e:
             log.error(f"Error handling chat message: {e}")
-            raise
+            log.error(f"Exception type: {type(e).__name__}")
+            log.error(f"Exception details: {str(e)}")
+            
+            # Return error response instead of re-raising
+            return create_agent_response(
+                success=False,
+                content=f"抱歉，处理消息时遇到错误：{str(e)}",
+                request_id=request_id
+            )
     
     def _create_agent_prompt(self, data: Dict[str, Any], session_history: List[Dict]) -> str:
         """Create enriched prompt for agent with session history"""

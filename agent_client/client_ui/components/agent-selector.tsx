@@ -135,7 +135,7 @@ export function AgentSelector({ onAgentSelect, onCancel }: AgentSelectorProps) {
                 <div className="space-y-2">
                   <div className="font-semibold text-base text-gray-900 dark:text-white">{agent.name}</div>
                   <div className="text-xs text-gray-400">节点ID: {agent.node_id}</div>
-                  <div className="text-xs text-gray-400">地址: {agent.address}</div>
+                  <div className="text-xs text-gray-400">地址: {agent.node_id}</div>
                   
                   {agent.bio && (
                     <div className="text-sm text-gray-600 dark:text-gray-300">
