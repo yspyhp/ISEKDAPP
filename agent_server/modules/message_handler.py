@@ -38,13 +38,14 @@ class DefaultMessageHandler(BaseMessageHandler):
         if "contextId=" in message and "messageId=" in message and "parts=[Part(root=TextPart(" in message:
             # Extract JSON from ISEK message wrapper
             import re
-            json_match = re.search(r"text='([^']*)'", message)
+            json_match = re.search(r"text='((?:[^'\\]|\\.)*)'", message)
             if not json_match:
                 raise ValueError("Could not extract JSON from ISEK message wrapper")
             
             json_str = json_match.group(1)
-            # Unescape the JSON string
-            json_str = json_str.replace('\\"', '"').replace('\\\\', '\\')
+            # Properly unescape the JSON string
+            import codecs
+            json_str = codecs.decode(json_str, 'unicode_escape')
             
             try:
                 data = json.loads(json_str)
