@@ -1,12 +1,6 @@
-import json
+"""
+A2A Agent Server Package
+Refactored implementation following A2A and ISEK best practices
+"""
 
-import requests
-
-url = 'https://api.coze.cn/v3/chat/message/list?conversation_id=7528021215995379722&chat_id=7528021215995396106&'
-headers = {
-    "Authorization": "Bearer pat_ehYJLwcHflqZWB6peSvOMbptRRKt5dLbrkBi2Z9Xzcd2WBSk8mPjtRsmZIgdVJy5",
-    "Content-Type": "application/json"
-}
-
-response = requests.get(url=url, headers=headers)
-print(json.loads(response.content))
+__version__ = "2.0.0-refactored"

@@ -13,8 +13,7 @@ from isek.node.etcd_registry import EtcdRegistry
 
 # Add path to import SessionAdapter and modules
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..'))
-from session_adapter import SessionAdapter
-from modules import DefaultSessionManager, DefaultTaskManager, DefaultMessageHandler
+from adapter.isek_adapter import UnifiedIsekAdapter
 
 
 # Load environment variables from .env file in project root
@@ -180,12 +179,10 @@ def main():
         members=[memory_tool_agent]
     )
 
-    # 3. Create SessionAdapter with the Agent Team
-    session_adapter = SessionAdapter(
-        agent=agent_team,  # Connect the agent team to the session adapter
-        session_manager=DefaultSessionManager(),
-        task_manager=DefaultTaskManager(),
-        message_handler=DefaultMessageHandler()
+    # 3. Create UnifiedIsekAdapter with the Agent Team - 支持完整的A2A功能
+    adapter = UnifiedIsekAdapter(
+        isek_team=agent_team,
+        enable_streaming=False  # 可以根据配置启用流式响应
     )
     
     # 4. Load configuration and start the Node Server with SessionAdapter
@@ -210,7 +207,7 @@ def main():
         server_node = Node(
             node_id=config["node_id"],
             port=config["port"], 
-            adapter=session_adapter, 
+            adapter=adapter, 
             registry=etcd_registry
         )
 

@@ -1,0 +1,17 @@
+# ISEK A2A Agent Server - Minimal Dependencies
+
+# Core dependencies for ISEK Node server
+uvicorn>=0.22.0
+httpx>=0.24.0
+python-dotenv>=1.0.0
+
+# Development dependencies (optional)
+pytest>=7.0.0
+pytest-asyncio>=0.21.0
+
+# Note: ISEK framework provides:
+# - A2A Protocol support
+# - Node management
+# - Registry operations
+# - Session management
+# - Database operations

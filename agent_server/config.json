@@ -1,10 +1,85 @@
 {
-  "node_id": "a_nameless_agent",
-  "port": 8888,
-  "p2p": true,
+  "node_id": "lyra-a2a-agent",
+  "host": "localhost",
+  "port": 8081,
   "p2p_server_port": 9000,
   "registry": {
     "host": "47.236.116.81",
     "port": 2379
+  },
+  "a2a": {
+    "enhanced_mode": true,
+    "task_management": {
+      "enable_cancellation": true,
+      "max_task_duration": 3600,
+      "progress_reporting": true,
+      "task_persistence": true
+    },
+    "session_management": {
+      "session_timeout": 1800,
+      "max_history_length": 100,
+      "context_persistence": true
+    },
+    "streaming": {
+      "enabled": false,
+      "chunk_size": 5,
+      "delay_ms": 50
+    },
+    "multiturn_conversation": {
+      "enabled": true,
+      "max_turns": 10,
+      "auto_timeout": 300
+    },
+    "error_handling": {
+      "max_retries": 3,
+      "retry_backoff": "exponential",
+      "graceful_degradation": true
+    },
+    "performance": {
+      "connection_pool_size": 10,
+      "request_timeout": 60,
+      "memory_optimization": true
+    },
+    "security": {
+      "input_validation": true,
+      "rate_limiting": true,
+      "audit_logging": true
+    },
+    "monitoring": {
+      "health_checks": true,
+      "metrics_collection": true,
+      "performance_tracking": true
+    }
+  },
+  "p2p": {
+    "enabled": true,
+    "discovery": {
+      "enabled": true,
+      "interval": 30
+    },
+    "messaging": {
+      "max_message_size": 1048576,
+      "timeout": 60,
+      "retry_count": 3
+    }
+  },
+  "logging": {
+    "level": "INFO",
+    "format": "json",
+    "file": "logs/a2a-agent.log",
+    "max_size": "10MB",
+    "backup_count": 5
+  },
+  "features": {
+    "prompt_optimization": true,
+    "context_awareness": true,
+    "long_running_tasks": true,
+    "multi_agent_coordination": true,
+    "memory_integration": true
+  },
+  "compliance": {
+    "a2a_standard": "1.0.0",
+    "best_practices": true,
+    "protocol_version": "5.0.0"
   }
 }
