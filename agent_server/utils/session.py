@@ -1,10 +1,20 @@
 """
 Session Management Utilities
-会话管理工具类 - 专注于会话和对话历史管理，独立于Memory
+会话管理工具类 - 基于a2a native服务的增强会话管理
 """
 
 from typing import List, Optional, Dict
 from datetime import datetime
+
+try:
+    from a2a.sessions import InMemorySessionService
+    A2A_AVAILABLE = True
+except ImportError:
+    A2A_AVAILABLE = False
+    # Fallback base class
+    class InMemorySessionService:
+        def __init__(self):
+            self._sessions = {}
 
 
 class ConversationTurn:
@@ -24,11 +34,12 @@ class ConversationTurn:
         }
 
 
-class SessionStore:
-    """独立的会话存储管理器 - 只管理聊天历史，不涉及Memory"""
+class SessionStore(InMemorySessionService):
+    """增强的会话存储管理器 - 基于a2a native服务"""
     
     def __init__(self):
-        self.sessions = {}  # session_id -> session_data
+        super().__init__()
+        self.sessions = {}  # session_id -> session_data (ISEK扩展)
         self.conversation_history = {}  # session_id -> List[ConversationTurn]
         
     def create_session(self, session_id: str, user_id: str = "default") -> dict:

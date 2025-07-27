@@ -1,6 +1,6 @@
 """
 A2A Protocol Implementation
-A2A协议实现 - 遵循Google A2A最佳实践，AgentExecutor只负责run/cancel，复杂逻辑在adapter层
+A2A protocol implementation - Following Google A2A best practices, AgentExecutor only handles run/cancel, complex logic is handled in the adapter layer
 """
 
 import asyncio
@@ -38,9 +38,9 @@ from isek.utils.log import log
 
 class A2ACompliantAgentExecutor(AgentExecutor):
     """
-    A2A合规的Agent Executor - 只负责run/cancel，不包含任何业务逻辑
-    所有复杂逻辑（任务管理、会话管理、多轮对话等）都在Adapter层处理
-    遵循Google A2A最佳实践
+    A2A Compliant Agent Executor - Only handles run/cancel, contains no business logic
+    All complex logic (task management, session management, multi-turn conversations, etc.) is handled in the adapter layer
+    Following Google A2A best practices
     """
     
     def __init__(self, url: str, adapter: Adapter):
@@ -48,13 +48,13 @@ class A2ACompliantAgentExecutor(AgentExecutor):
         self.adapter = adapter
 
     def get_a2a_agent_card(self) -> AgentCard:
-        """获取A2A代理卡片信息"""
+        """Get A2A agent card information"""
         adapter_card = self.adapter.get_adapter_card()
         return AgentCard(
             name=adapter_card.name,
             description=f"A2A-enabled: {adapter_card.bio}",
             url=self.url,
-            version="5.0.0",  # 升级版本号
+            version="5.0.0",  # Upgrade version number
             defaultInputModes=["text"],
             defaultOutputModes=["text"],
             capabilities=AgentCapabilities(
@@ -67,20 +67,20 @@ class A2ACompliantAgentExecutor(AgentExecutor):
 
     async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
         """
-        执行任务 - 仅负责调用adapter.run()，不包含业务逻辑
-        遵循A2A最佳实践：AgentExecutor不处理逻辑，通过adapter处理
+        Execute task - Only responsible for calling adapter.run(), contains no business logic
+        Following A2A best practices: AgentExecutor doesn't handle logic, handled through adapter
         """
         try:
-            # 构建adapter上下文
+            # Build adapter context
             adapter_context = self._build_adapter_context(context)
             
-            # 检查是否使用增强adapter
-            # 使用统一adapter进行所有处理
+            # Check if using enhanced adapter
+            # Use unified adapter for all processing
             async for event in self.adapter.execute_async(adapter_context):
                 await event_queue.enqueue_event(event)
                 
         except Exception as e:
-            # 最小化的异常处理
+            # Minimal exception handling
             await event_queue.enqueue_event(A2AError(
                 code=-32603,
                 message=f"Executor failed: {str(e)}",
@@ -89,27 +89,27 @@ class A2ACompliantAgentExecutor(AgentExecutor):
 
     async def cancel(self, context: RequestContext, event_queue: EventQueue) -> None:
         """
-        取消任务 - 仅负责调用adapter.cancel()，不包含业务逻辑
-        遵循A2A最佳实践：AgentExecutor不处理逻辑，通过adapter处理
+        Cancel task - Only responsible for calling adapter.cancel(), contains no business logic
+        Following A2A best practices: AgentExecutor doesn't handle logic, handled through adapter
         """
         try:
-            # 构建adapter上下文
+            # Build adapter context
             adapter_context = self._build_adapter_context(context)
             
-            # 检查adapter是否支持异步取消
-            # 统一adapter支持取消
+            # Check if adapter supports async cancellation
+            # Unified adapter supports cancellation
             async for event in self.adapter.cancel_async(adapter_context):
                 await event_queue.enqueue_event(event)
                 
         except Exception as e:
-            # 最小化的异常处理
+            # Minimal exception handling
             await event_queue.enqueue_event(A2AError(
                 code=-32603,
                 message=f"Cancel failed: {str(e)}"
             ))
     
     def _build_adapter_context(self, context: RequestContext) -> dict:
-        """构建传递给adapter的上下文 - 只做数据转换"""
+        """Build context passed to adapter - only data conversion"""
         return {
             "task_id": context.task_id,
             "session_id": context.context_id,
@@ -120,7 +120,7 @@ class A2ACompliantAgentExecutor(AgentExecutor):
 
 
 def build_send_message_request(sender_node_id, message):
-    """构建P2P消息请求"""
+    """Build P2P message request"""
     send_message_payload: dict[str, Any] = {
         "message": {
             "role": "user",
@@ -136,7 +136,7 @@ def build_send_message_request(sender_node_id, message):
 
 
 def build_task_request(sender_node_id, task_id: str, action: str, **kwargs):
-    """构建P2P任务请求（get_task, cancel_task等）"""
+    """Build P2P task request (get_task, cancel_task, etc.)"""
     task_payload: dict[str, Any] = {
         "action": action,
         "task_id": task_id,
@@ -157,10 +157,10 @@ def build_task_request(sender_node_id, task_id: str, action: str, **kwargs):
 
 class A2AProtocol(Protocol):
     """
-    A2A协议实现 - 遵循Google A2A最佳实践
-    - AgentExecutor只负责run/cancel
-    - 复杂逻辑在adapter层处理
-    - 支持任务管理、会话管理、多轮对话
+    A2A Protocol Implementation - Following Google A2A best practices
+    - AgentExecutor only handles run/cancel
+    - Complex logic handled in adapter layer
+    - Supports task management, session management, multi-turn conversations
     """
     
     def __init__(
@@ -197,16 +197,16 @@ class A2AProtocol(Protocol):
             self.a2a_application = self.build_a2a_application()
 
     def bootstrap_server(self):
-        """启动A2A服务器"""
+        """Start A2A server"""
         uvicorn.run(self.a2a_application.build(), host="0.0.0.0", port=self.port)
 
     def bootstrap_p2p_extension(self):
-        """启动P2P扩展"""
+        """Start P2P extension"""
         if self.p2p and self.p2p_server_port:
             self.__bootstrap_p2p_server()
 
     def __bootstrap_p2p_server(self):
-        """启动P2P服务器"""
+        """Start P2P server"""
         def stream_output(stream):
             for line in iter(stream.readline, ""):
                 log.debug(line)
@@ -249,7 +249,7 @@ class A2AProtocol(Protocol):
             time.sleep(1)
 
     def __load_p2p_context(self):
-        """加载P2P上下文"""
+        """Load P2P context"""
         try:
             response = httpx.get(f"http://localhost:{self.p2p_server_port}/p2p_context")
             response_body = json.loads(response.content)
@@ -262,92 +262,129 @@ class A2AProtocol(Protocol):
             return None
 
     def stop_server(self) -> None:
-        """停止服务器"""
+        """Stop server"""
         pass
 
-    def send_p2p_message(self, sender_node_id, p2p_address, message):
-        """发送P2P消息"""
+    # ============ 统一P2P转发核心方法 ============
+    
+    def _forward_to_p2p(self, p2p_address: str, json_rpc_request: dict) -> dict:
+        """统一的P2P转发方法 - 可以转发任何JSON-RPC请求"""
+        try:
+            response = httpx.post(
+                url=f"http://localhost:{self.p2p_server_port}/call_peer?p2p_address={urllib.parse.quote(p2p_address)}",
+                json=json_rpc_request,
+                headers={"Content-Type": "application/json"},
+                timeout=60,
+            )
+            return response.json()
+        except Exception as e:
+            log.error(f"P2P forward failed: {e}")
+            return {"error": str(e)}
+    
+    async def _forward_to_p2p_async(self, p2p_address: str, json_rpc_request: dict) -> dict:
+        """异步P2P转发方法"""
+        try:
+            async with httpx.AsyncClient(timeout=60) as client:
+                response = await client.post(
+                    url=f"http://localhost:{self.p2p_server_port}/call_peer?p2p_address={urllib.parse.quote(p2p_address)}",
+                    json=json_rpc_request,
+                    headers={"Content-Type": "application/json"}
+                )
+                return response.json()
+        except Exception as e:
+            log.error(f"Async P2P forward failed: {e}")
+            return {"error": str(e)}
+
+    # ============ 消息发送方法 (简化版) ============
+    
+    def send_p2p_message(self, sender_node_id: str, p2p_address: str, message: str) -> str:
+        """发送P2P消息 - 使用统一转发"""
         request = build_send_message_request(sender_node_id, message)
         request_body = request.model_dump(mode="json", exclude_none=True)
+        response = self._forward_to_p2p(p2p_address, request_body)
+        
+        if "error" in response:
+            raise Exception(f"P2P message send failed: {response['error']}")
+        return response["result"]["parts"][0]["text"]
+
+    async def send_p2p_message_async(self, sender_node_id: str, p2p_address: str, message: str) -> str:
+        """异步发送P2P消息 - 使用统一转发"""
+        request = build_send_message_request(sender_node_id, message)
+        request_body = request.model_dump(mode="json", exclude_none=True)
+        response = await self._forward_to_p2p_async(p2p_address, request_body)
+        
+        if "error" in response:
+            raise Exception(f"Async P2P message send failed: {response['error']}")
+        return response["result"]["parts"][0]["text"]
+
+    def send_message(self, sender_node_id: str, target_address: str, message: str) -> str:
+        """发送A2A消息 - HTTP版本"""
+        request = build_send_message_request(sender_node_id, message)
+        request_body = request.model_dump(mode="json", exclude_none=True)
+        
         response = httpx.post(
-            url=f"http://localhost:{self.p2p_server_port}/call_peer?p2p_address={urllib.parse.quote(p2p_address)}",
+            url=target_address,
             json=request_body,
             headers={"Content-Type": "application/json"},
             timeout=60,
         )
-        response_body = json.loads(response.content)
-        return response_body["result"]["parts"][0]["text"]
+        response_data = response.json()
+        return response_data["result"]["parts"][0]["text"]
 
-    def send_message(self, sender_node_id, target_address, message):
-        """发送A2A消息"""
-        httpx_client = httpx.AsyncClient(timeout=60)
-        client = A2AClient(httpx_client=httpx_client, url=target_address)
+    async def send_message_async(self, sender_node_id: str, target_address: str, message: str) -> str:
+        """异步发送A2A消息 - HTTP版本"""
         request = build_send_message_request(sender_node_id, message)
-        response = asyncio.run(client.send_message(request))
-        return response.model_dump(mode="json", exclude_none=True)["result"]["parts"][0]["text"]
-
-    def get_task_p2p(self, sender_node_id: str, p2p_address: str, task_id: str, **kwargs) -> Dict[str, Any]:
-        """P2P获取任务状态"""
-        try:
-            task_request = build_task_request(sender_node_id, task_id, "get_task", **kwargs)
-            
-            response = httpx.post(
-                url=f"http://localhost:{self.p2p_server_port}/call_peer?p2p_address={urllib.parse.quote(p2p_address)}",
-                json=task_request,
-                headers={"Content-Type": "application/json"},
-                timeout=60,
+        request_body = request.model_dump(mode="json", exclude_none=True)
+        
+        async with httpx.AsyncClient(timeout=60) as client:
+            response = await client.post(
+                url=target_address,
+                json=request_body,
+                headers={"Content-Type": "application/json"}
             )
-            
-            if response.status_code == 200:
-                response_body = json.loads(response.content)
-                return response_body.get("result", {})
-            else:
-                return {
-                    "error": f"HTTP {response.status_code}: {response.text}",
-                    "task_id": task_id,
-                    "status": "error"
-                }
-                
-        except Exception as e:
-            log.error(f"P2P get_task failed for task {task_id}: {str(e)}")
-            return {
-                "error": str(e),
-                "task_id": task_id,
-                "status": "error"
-            }
+            response_data = response.json()
+            return response_data["result"]["parts"][0]["text"]
+
+    # ============ 任务操作方法 (简化版) ============
+    
+    def get_task_p2p(self, sender_node_id: str, p2p_address: str, task_id: str, **kwargs) -> Dict[str, Any]:
+        """P2P获取任务状态 - 使用统一转发"""
+        task_request = build_task_request(sender_node_id, task_id, "get_task", **kwargs)
+        response = self._forward_to_p2p(p2p_address, task_request)
+        
+        if "error" in response:
+            return {"error": response["error"], "task_id": task_id, "status": "error"}
+        return response.get("result", response)
+
+    async def get_task_p2p_async(self, sender_node_id: str, p2p_address: str, task_id: str, **kwargs) -> Dict[str, Any]:
+        """异步P2P获取任务状态 - 使用统一转发"""
+        task_request = build_task_request(sender_node_id, task_id, "get_task", **kwargs)
+        response = await self._forward_to_p2p_async(p2p_address, task_request)
+        
+        if "error" in response:
+            return {"error": response["error"], "task_id": task_id, "status": "error"}
+        return response.get("result", response)
 
     def cancel_task_p2p(self, sender_node_id: str, p2p_address: str, task_id: str, **kwargs) -> Dict[str, Any]:
-        """P2P取消任务"""
-        try:
-            task_request = build_task_request(sender_node_id, task_id, "cancel_task", **kwargs)
-            
-            response = httpx.post(
-                url=f"http://localhost:{self.p2p_server_port}/call_peer?p2p_address={urllib.parse.quote(p2p_address)}",
-                json=task_request,
-                headers={"Content-Type": "application/json"},
-                timeout=60,
-            )
-            
-            if response.status_code == 200:
-                response_body = json.loads(response.content)
-                return response_body.get("result", {})
-            else:
-                return {
-                    "error": f"HTTP {response.status_code}: {response.text}",
-                    "task_id": task_id,
-                    "status": "cancel_failed"
-                }
-                
-        except Exception as e:
-            log.error(f"P2P cancel_task failed for task {task_id}: {str(e)}")
-            return {
-                "error": str(e),
-                "task_id": task_id,
-                "status": "cancel_failed"
-            }
+        """P2P取消任务 - 使用统一转发"""
+        task_request = build_task_request(sender_node_id, task_id, "cancel_task", **kwargs)
+        response = self._forward_to_p2p(p2p_address, task_request)
+        
+        if "error" in response:
+            return {"error": response["error"], "task_id": task_id, "status": "cancel_failed"}
+        return response.get("result", response)
+
+    async def cancel_task_p2p_async(self, sender_node_id: str, p2p_address: str, task_id: str, **kwargs) -> Dict[str, Any]:
+        """异步P2P取消任务 - 使用统一转发"""
+        task_request = build_task_request(sender_node_id, task_id, "cancel_task", **kwargs)
+        response = await self._forward_to_p2p_async(p2p_address, task_request)
+        
+        if "error" in response:
+            return {"error": response["error"], "task_id": task_id, "status": "cancel_failed"}
+        return response.get("result", response)
 
     def get_task(self, sender_node_id: str, target_address: str, task_id: str, **kwargs) -> Dict[str, Any]:
-        """直接A2A获取任务状态"""
+        """Direct A2A get task status"""
         try:
             task_request = build_task_request(sender_node_id, task_id, "get_task", **kwargs)
             
@@ -376,7 +413,7 @@ class A2AProtocol(Protocol):
             }
 
     def cancel_task(self, sender_node_id: str, target_address: str, task_id: str, **kwargs) -> Dict[str, Any]:
-        """直接A2A取消任务"""
+        """Direct A2A cancel task"""
         try:
             task_request = build_task_request(sender_node_id, task_id, "cancel_task", **kwargs)
             
@@ -405,7 +442,7 @@ class A2AProtocol(Protocol):
             }
 
     def build_a2a_application(self) -> JSONRPCApplication:
-        """构建A2A应用 - 遵循Google A2A最佳实践"""
+        """Build A2A application - Following Google A2A best practices"""
         if not self.adapter or not isinstance(self.adapter, Adapter):
             raise ValueError("A Adapter must be provided to the A2AProtocol.")
         
@@ -413,18 +450,18 @@ class A2AProtocol(Protocol):
 
     def _build_enhanced_a2a_application(self) -> JSONRPCApplication:
         """
-        构建增强版的A2A应用 - 复杂逻辑在adapter层
-        遵循Google A2A最佳实践：AgentExecutor只负责run/cancel
+        Build enhanced A2A application - Complex logic in adapter layer
+        Following Google A2A best practices: AgentExecutor only handles run/cancel
         """
-        # 使用统一的增强adapter
+        # Use unified enhanced adapter
         # Use the unified adapter directly
         enhanced_adapter = self.adapter
         log.info("Using UnifiedIsekAdapter with complete A2A features")
         
-        # 使用A2A合规的协议层执行器 - 只负责run/cancel
+        # Use A2A compliant protocol layer executor - only handles run/cancel
         agent_executor = A2ACompliantAgentExecutor(self.url, enhanced_adapter)
         
-        # 使用标准任务存储（复杂任务管理在adapter中）
+        # Use standard task store (complex task management in adapter)
         request_handler = DefaultRequestHandler(
             agent_executor=agent_executor,
             task_store=InMemoryTaskStore(),
@@ -440,16 +477,16 @@ class A2AProtocol(Protocol):
         enable_long_tasks: bool = True,
         enable_enhanced_features: bool = True
     ):
-        """动态启用增强功能"""
+        """Dynamically enable enhanced features"""
         self.enable_long_tasks = enable_long_tasks
         self.enable_enhanced_features = enable_enhanced_features
         
-        # 重新构建应用
+        # Rebuild application
         self.a2a_application = self.build_a2a_application()
         log.info("Enhanced A2A features enabled")
 
     def get_task_progress(self, task_id: str) -> Optional[dict]:
-        """获取本地任务进度（从adapter中获取）"""
+        """Get local task progress (from adapter)"""
         try:
             adapter = self.a2a_application.http_handler.agent_executor.adapter
             if hasattr(adapter, 'task_store'):
@@ -460,7 +497,7 @@ class A2AProtocol(Protocol):
             return None
 
     def get_session_info(self, context_id: str) -> Optional[dict]:
-        """获取本地会话信息（从adapter中获取）"""
+        """Get local session info (from adapter)"""
         try:
             adapter = self.a2a_application.http_handler.agent_executor.adapter
             if hasattr(adapter, 'session_manager'):
@@ -470,12 +507,3 @@ class A2AProtocol(Protocol):
             log.error(f"Failed to get local session info for {context_id}: {str(e)}")
             return None
     
-    def get_task_progress_p2p(self, sender_node_id: str, p2p_address: str, task_id: str) -> Optional[dict]:
-        """P2P获取任务进度"""
-        result = self.get_task_p2p(sender_node_id, p2p_address, task_id, action_type="get_progress")
-        return result if not result.get("error") else None
-    
-    def get_session_info_p2p(self, sender_node_id: str, p2p_address: str, context_id: str) -> Optional[dict]:
-        """P2P获取会话信息"""
-        result = self.get_task_p2p(sender_node_id, p2p_address, context_id, action_type="get_session")
-        return result if not result.get("error") else None

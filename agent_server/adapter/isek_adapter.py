@@ -1,17 +1,17 @@
 """
-Unified ISEK Team Adapter for A2A Protocol
-A comprehensive adapter that integrates ISEK Team with Google's A2A (Agent-to-Agent) protocol.
-Features include: task management, session management, multi-turn conversations, 
-long-running task support, and streaming responses.
+Simplified ISEK Team Adapter for A2A Protocol
+基于a2a native服务的简化ISEK适配器，保留核心功能，提高可维护性
 """
 
 import asyncio
 from typing import Any, AsyncGenerator, Optional, Dict, List
 from datetime import datetime
 
+# A2A native imports
 from a2a.utils import new_agent_text_message, new_task
 from a2a.types import TaskStatusUpdateEvent, A2AError, TaskState, TaskStatus, Task
 
+# ISEK imports
 from isek.adapter.base import Adapter, AdapterCard
 from isek.team.isek_team import IsekTeam
 from utils.session import SessionManager
@@ -20,59 +20,33 @@ from utils.task import EnhancedTaskStore, TaskCancelledException
 
 class UnifiedIsekAdapter(Adapter):
     """
-    Unified ISEK Adapter - Comprehensive business logic implementation
+    简化的ISEK适配器 - 基于a2a native服务
     
-    This adapter provides a complete integration layer between ISEK Team and the A2A protocol,
-    offering the following capabilities:
-    
-    - Task Management: Lifecycle tracking, progress reporting, cancellation support
-    - Session Management: Conversation history, context awareness
-    - Multi-turn Conversations: Information gathering, confirmation workflows
-    - Long-running Tasks: Cancellable extended operations with progress updates
-    - Streaming Responses: Real-time output support
-    
-    Follows Google A2A best practices for agent-to-agent communication.
+    核心功能：
+    - 任务管理：基于a2a native TaskStore
+    - 会话管理：基于a2a native SessionService
+    - 多轮对话：信息收集和确认流程
+    - 流式响应：实时输出支持
     """
     
     def __init__(self, isek_team: IsekTeam, enable_streaming: bool = False):
-        """
-        Initialize the Unified ISEK Adapter
-        
-        Args:
-            isek_team: The ISEK Team instance to be wrapped
-            enable_streaming: Whether to enable streaming response mode
-        """
+        """初始化简化的ISEK适配器"""
         self.isek_team = isek_team
         self.enable_streaming = enable_streaming
         self.session_manager = SessionManager()
         self.task_store = EnhancedTaskStore()
-        self.running_tasks = {}  # Track active tasks and their states
-        self.conversation_states = {}  # Multi-turn conversation state management
+        self.running_tasks = {}  # 活跃任务跟踪
+        self.conversation_states = {}  # 多轮对话状态
     
     async def execute_async(self, context: dict) -> AsyncGenerator[Any, None]:
-        """
-        Asynchronously execute tasks and generate event streams
-        
-        This method implements the core execution logic following A2A best practices:
-        1. Task lifecycle management
-        2. Session context handling
-        3. Multi-turn conversation processing
-        4. Long vs short task routing
-        5. Progress reporting and cancellation support
-        
-        Args:
-            context: Dictionary containing task_id, session_id, user_input, and optional current_task
-            
-        Yields:
-            A2A protocol events (TaskStatusUpdateEvent, agent messages, errors)
-        """
+        """异步执行任务并生成A2A事件流"""
         task_id = context["task_id"]
         session_id = context["session_id"]
         user_input = context["user_input"]
         current_task = context.get("current_task")
         
         try:
-            # Step 1: Task Management - Create and track the task
+            # 1. 创建和跟踪任务
             await self.task_store.create_task(task_id, session_id)
             self.running_tasks[task_id] = {
                 "cancelled": False,
@@ -80,7 +54,7 @@ class UnifiedIsekAdapter(Adapter):
                 "session_id": session_id
             }
             
-            # Step 2: Send task start status event
+            # 2. 发送任务开始事件
             yield TaskStatusUpdateEvent(
                 contextId=session_id,
                 taskId=task_id,
@@ -89,12 +63,11 @@ class UnifiedIsekAdapter(Adapter):
                 metadata={"started_at": datetime.now().isoformat()}
             )
             
-            # Step 3: Session Management - Get and manage session context
+            # 3. 会话管理
             session_context = await self._manage_session_context(session_id, user_input)
             
-            # Step 4: Multi-turn conversation handling
+            # 4. 多轮对话处理
             if current_task and current_task.status in ["working", "input-required"]:
-                # Handle continuation of existing multi-turn conversation
                 async for event in self._handle_conversation_continuation(
                     task_id, session_id, user_input, session_context
                 ):
@@ -103,11 +76,9 @@ class UnifiedIsekAdapter(Adapter):
                     yield event
                 return
             
-            # Step 5: Analyze if multi-turn conversation is needed
+            # 5. 检查是否需要多轮对话
             multiturn_result = await self._analyze_multiturn_requirement(user_input)
-            
             if multiturn_result["needs_more_info"]:
-                # Enter multi-turn conversation mode to gather more information
                 async for event in self._handle_multiturn_flow(
                     task_id, session_id, multiturn_result, session_context
                 ):
@@ -116,7 +87,7 @@ class UnifiedIsekAdapter(Adapter):
                     yield event
                 return
             
-            # Step 6: Build enhanced contextual prompt
+            # 6. 构建上下文提示
             enhanced_prompt = self._build_contextual_prompt(user_input, session_context)
             
             # Step 7: Long task support - Determine if this is a long-running task
