@@ -14,6 +14,7 @@ from isek.node.etcd_registry import EtcdRegistry
 # Add path to import SessionAdapter and modules
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..'))
 from adapter.isek_adapter import UnifiedIsekAdapter
+from protocol.a2a_protocol import A2AProtocol
 
 
 # Load environment variables from .env file in project root
@@ -203,10 +204,23 @@ def main():
         print(f"Registry: {config['registry']['host']}:{config['registry']['port']}")
         log.info("Lyra Agent server is starting up...")
         
-        # Create the server node with SessionAdapter using config values
+        # Create our local A2A protocol instance
+        local_a2a_protocol = A2AProtocol(
+            host="0.0.0.0",
+            port=config["port"],
+            adapter=adapter,
+            p2p=False,  # Disable P2P for now
+            p2p_server_port=config["p2p_server_port"]
+        )
+        
+        # Create the server node with our local protocol
         server_node = Node(
             node_id=config["node_id"],
-            port=config["port"], 
+            host="0.0.0.0",
+            port=config["port"],
+            p2p=False,  # Disable P2P for now
+            p2p_server_port=config["p2p_server_port"],
+            protocol=local_a2a_protocol,
             adapter=adapter, 
             registry=etcd_registry
         )

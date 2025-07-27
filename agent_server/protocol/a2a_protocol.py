@@ -32,8 +32,7 @@ from a2a.utils import new_agent_text_message
 from isek.protocol.protocol import Protocol
 from isek.adapter.base import Adapter
 from isek.adapter.simple_adapter import SimpleAdapter
-from agent_server.adapter.isek_adapter import IsekTeamAdapter, StreamingIsekAdapter
-from agent_server.adapter.isek_adapter import UnifiedIsekAdapter
+from adapter.isek_adapter import UnifiedIsekAdapter
 from isek.utils.log import log
 
 
@@ -85,7 +84,7 @@ class A2ACompliantAgentExecutor(AgentExecutor):
             await event_queue.enqueue_event(A2AError(
                 code=-32603,
                 message=f"Executor failed: {str(e)}",
-                data={"task_id": context.get_task_id()}
+                data={"task_id": context.task_id}
             ))
 
     async def cancel(self, context: RequestContext, event_queue: EventQueue) -> None:
@@ -112,8 +111,8 @@ class A2ACompliantAgentExecutor(AgentExecutor):
     def _build_adapter_context(self, context: RequestContext) -> dict:
         """构建传递给adapter的上下文 - 只做数据转换"""
         return {
-            "task_id": context.get_task_id(),
-            "session_id": context.get_context_id(),
+            "task_id": context.task_id,
+            "session_id": context.context_id,
             "user_input": context.get_user_input(),
             "message": context.message,
             "current_task": context.current_task

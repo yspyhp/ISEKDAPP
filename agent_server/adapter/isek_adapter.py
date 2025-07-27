@@ -1,6 +1,8 @@
 """
 Unified ISEK Team Adapter for A2A Protocol
-统一的ISEK Team适配器 - 包含所有功能：任务管理、会话管理、多轮对话、长任务支持、流式响应
+A comprehensive adapter that integrates ISEK Team with Google's A2A (Agent-to-Agent) protocol.
+Features include: task management, session management, multi-turn conversations, 
+long-running task support, and streaming responses.
 """
 
 import asyncio
@@ -18,32 +20,59 @@ from utils.task import EnhancedTaskStore, TaskCancelledException
 
 class UnifiedIsekAdapter(Adapter):
     """
-    统一的ISEK适配器 - 包含所有复杂业务逻辑
-    - 任务管理：生命周期跟踪、进度报告、取消支持
-    - 会话管理：对话历史、上下文感知
-    - 多轮对话：信息收集、确认流程
-    - 长任务支持：可取消的长时间任务
-    - 流式响应：实时输出支持
-    遵循Google A2A最佳实践
+    Unified ISEK Adapter - Comprehensive business logic implementation
+    
+    This adapter provides a complete integration layer between ISEK Team and the A2A protocol,
+    offering the following capabilities:
+    
+    - Task Management: Lifecycle tracking, progress reporting, cancellation support
+    - Session Management: Conversation history, context awareness
+    - Multi-turn Conversations: Information gathering, confirmation workflows
+    - Long-running Tasks: Cancellable extended operations with progress updates
+    - Streaming Responses: Real-time output support
+    
+    Follows Google A2A best practices for agent-to-agent communication.
     """
     
     def __init__(self, isek_team: IsekTeam, enable_streaming: bool = False):
+        """
+        Initialize the Unified ISEK Adapter
+        
+        Args:
+            isek_team: The ISEK Team instance to be wrapped
+            enable_streaming: Whether to enable streaming response mode
+        """
         self.isek_team = isek_team
         self.enable_streaming = enable_streaming
         self.session_manager = SessionManager()
         self.task_store = EnhancedTaskStore()
-        self.running_tasks = {}
-        self.conversation_states = {}  # 多轮对话状态
+        self.running_tasks = {}  # Track active tasks and their states
+        self.conversation_states = {}  # Multi-turn conversation state management
     
     async def execute_async(self, context: dict) -> AsyncGenerator[Any, None]:
-        """异步执行任务，产生事件流 - 遵循A2A最佳实践"""
+        """
+        Asynchronously execute tasks and generate event streams
+        
+        This method implements the core execution logic following A2A best practices:
+        1. Task lifecycle management
+        2. Session context handling
+        3. Multi-turn conversation processing
+        4. Long vs short task routing
+        5. Progress reporting and cancellation support
+        
+        Args:
+            context: Dictionary containing task_id, session_id, user_input, and optional current_task
+            
+        Yields:
+            A2A protocol events (TaskStatusUpdateEvent, agent messages, errors)
+        """
         task_id = context["task_id"]
         session_id = context["session_id"]
         user_input = context["user_input"]
         current_task = context.get("current_task")
         
         try:
-            # 1. 任务管理 - 创建任务
+            # Step 1: Task Management - Create and track the task
             await self.task_store.create_task(task_id, session_id)
             self.running_tasks[task_id] = {
                 "cancelled": False,
@@ -51,7 +80,7 @@ class UnifiedIsekAdapter(Adapter):
                 "session_id": session_id
             }
             
-            # 2. 发送任务开始状态
+            # Step 2: Send task start status event
             yield TaskStatusUpdateEvent(
                 contextId=session_id,
                 taskId=task_id,
@@ -60,12 +89,12 @@ class UnifiedIsekAdapter(Adapter):
                 metadata={"started_at": datetime.now().isoformat()}
             )
             
-            # 3. 会话管理 - 获取和管理会话上下文
+            # Step 3: Session Management - Get and manage session context
             session_context = await self._manage_session_context(session_id, user_input)
             
-            # 4. 多轮对话处理
+            # Step 4: Multi-turn conversation handling
             if current_task and current_task.status in ["working", "input-required"]:
-                # 处理多轮对话的延续
+                # Handle continuation of existing multi-turn conversation
                 async for event in self._handle_conversation_continuation(
                     task_id, session_id, user_input, session_context
                 ):
@@ -74,11 +103,11 @@ class UnifiedIsekAdapter(Adapter):
                     yield event
                 return
             
-            # 5. 检查是否需要多轮对话收集信息
+            # Step 5: Analyze if multi-turn conversation is needed
             multiturn_result = await self._analyze_multiturn_requirement(user_input)
             
             if multiturn_result["needs_more_info"]:
-                # 需要更多信息，进入多轮对话模式
+                # Enter multi-turn conversation mode to gather more information
                 async for event in self._handle_multiturn_flow(
                     task_id, session_id, multiturn_result, session_context
                 ):
@@ -87,10 +116,10 @@ class UnifiedIsekAdapter(Adapter):
                     yield event
                 return
             
-            # 6. 构建增强的上下文提示
+            # Step 6: Build enhanced contextual prompt
             enhanced_prompt = self._build_contextual_prompt(user_input, session_context)
             
-            # 7. 长任务支持 - 根据输入判断是否为长任务
+            # Step 7: Long task support - Determine if this is a long-running task
             if self._is_long_running_task(enhanced_prompt):
                 async for event in self._execute_long_task(task_id, session_id, enhanced_prompt):
                     if self._is_task_cancelled(task_id):
@@ -102,11 +131,11 @@ class UnifiedIsekAdapter(Adapter):
                         break
                     yield event
             
-            # 8. 保存会话记录
+            # Step 8: Save conversation record and complete task
             if not self._is_task_cancelled(task_id):
                 await self._save_conversation_turn(session_id, user_input, "Task completed")
                 
-                # 更新任务状态
+                # Update task status to completed
                 await self.task_store.update_task_status(task_id, TaskState.completed)
                 yield TaskStatusUpdateEvent(
                     contextId=session_id,
@@ -116,6 +145,7 @@ class UnifiedIsekAdapter(Adapter):
                 )
                 
         except TaskCancelledException:
+            # Handle task cancellation gracefully
             yield TaskStatusUpdateEvent(
                 contextId=session_id,
                 taskId=task_id,
@@ -123,6 +153,7 @@ class UnifiedIsekAdapter(Adapter):
                 final=True
             )
         except Exception as e:
+            # Handle execution errors
             await self.task_store.update_task_status(task_id, TaskState.failed)
             yield A2AError(
                 code=-32603,
@@ -130,16 +161,26 @@ class UnifiedIsekAdapter(Adapter):
                 data={"task_id": task_id}
             )
         finally:
+            # Clean up running task tracking
             self.running_tasks.pop(task_id, None)
     
     async def cancel_async(self, context: dict) -> AsyncGenerator[Any, None]:
-        """取消任务 - 遵循A2A最佳实践"""
+        """
+        Cancel a running task - Follows A2A best practices
+        
+        Args:
+            context: Dictionary containing task_id to cancel
+            
+        Yields:
+            Cancellation confirmation or error event
+        """
         task_id = context["task_id"]
         if task_id in self.running_tasks:
+            # Mark task as cancelled
             self.running_tasks[task_id]["cancelled"] = True
             await self.task_store.update_task_status(task_id, TaskState.cancelled)
             
-            # 发送取消确认
+            # Send cancellation confirmation
             yield TaskStatusUpdateEvent(
                 contextId=self.running_tasks[task_id]["session_id"],
                 taskId=task_id,
@@ -148,30 +189,51 @@ class UnifiedIsekAdapter(Adapter):
                 metadata={"cancelled_at": datetime.now().isoformat()}
             )
         else:
+            # Task not found or already completed
             yield A2AError(
                 code=-32602,
                 message=f"Task {task_id} not found or already completed"
             )
     
     async def _manage_session_context(self, session_id: str, user_input: str) -> dict:
-        """管理会话上下文"""
+        """
+        Manage session context and conversation history
+        
+        Args:
+            session_id: Unique session identifier
+            user_input: Current user input
+            
+        Returns:
+            Dictionary containing session context and conversation history
+        """
         session_context = self.session_manager.get_session_context(session_id)
         if not session_context:
             session_context = self.session_manager.create_session_context(session_id)
         self.session_manager.update_session_activity(session_id)
         
-        # 获取对话历史
+        # Retrieve conversation history for context
         conversation_history = self.session_manager.get_conversation_history(session_id)
         session_context["conversation_history"] = conversation_history
         
         return session_context
     
     async def _analyze_multiturn_requirement(self, user_input: str) -> dict:
-        """分析是否需要多轮对话"""
-        # 简化的多轮对话判断逻辑
+        """
+        Analyze whether the user input requires multi-turn conversation
+        
+        This method implements a simple heuristic to determine if more information
+        is needed before processing the request.
+        
+        Args:
+            user_input: The user's input text
+            
+        Returns:
+            Dictionary indicating if multi-turn conversation is needed and what information to collect
+        """
+        # Simple multi-turn conversation detection logic
         word_count = len(user_input.split())
         
-        if word_count < 5:  # 输入太简短，需要更多信息
+        if word_count < 5:  # Input too brief, need more information
             return {
                 "needs_more_info": True,
                 "clarification_question": "I'd like to help you better. Could you provide more details about what you need?",
@@ -191,41 +253,69 @@ class UnifiedIsekAdapter(Adapter):
     async def _handle_conversation_continuation(
         self, task_id: str, session_id: str, user_input: str, session_context: dict
     ) -> AsyncGenerator[Any, None]:
-        """处理多轮对话的延续"""
+        """
+        Handle continuation of existing multi-turn conversations
+        
+        Routes the conversation to appropriate handlers based on current stage.
+        
+        Args:
+            task_id: Current task identifier
+            session_id: Session identifier
+            user_input: User's response
+            session_context: Current session context
+            
+        Yields:
+            Events for conversation continuation
+        """
         conv_state = self.conversation_states.get(session_id, {})
         
         if conv_state.get("stage") == "collecting_info":
+            # Continue information gathering phase
             async for event in self._handle_info_collection_continuation(
                 task_id, session_id, user_input, conv_state
             ):
                 yield event
         elif conv_state.get("stage") == "confirmation":
+            # Continue confirmation phase
             async for event in self._handle_confirmation_continuation(
                 task_id, session_id, user_input, conv_state
             ):
                 yield event
         else:
-            # 未知状态，重新开始
+            # Unknown state, restart conversation
             async for event in self._handle_new_conversation(task_id, session_id, user_input):
                 yield event
     
     async def _handle_info_collection_continuation(
         self, task_id: str, session_id: str, user_input: str, conv_state: dict
     ) -> AsyncGenerator[Any, None]:
-        """处理信息收集阶段的延续"""
-        # 记录收集到的信息
+        """
+        Handle continuation of information gathering phase
+        
+        Records collected information and determines if more is needed.
+        
+        Args:
+            task_id: Current task identifier
+            session_id: Session identifier
+            user_input: User's response to current question
+            conv_state: Current conversation state
+            
+        Yields:
+            Events for information collection continuation
+        """
+        # Record the collected information
         current_question = conv_state.get("current_question")
         if current_question:
             conv_state["collected_info"][current_question] = user_input
         
-        # 检查是否还需要更多信息
+        # Check if more information is still needed
         remaining_info = [
             info for info in conv_state.get("required_info", [])
             if info not in conv_state.get("collected_info", {})
         ]
         
         if remaining_info:
-            # 还需要更多信息
+            # More information needed, ask next question
             next_question = remaining_info[0]
             conv_state["current_question"] = next_question
             
@@ -233,7 +323,7 @@ class UnifiedIsekAdapter(Adapter):
                 f"Thank you! Now, could you please provide information about: {next_question}?"
             )
             
-            # 保持input-required状态
+            # Maintain working state while waiting for input
             yield TaskStatusUpdateEvent(
                 contextId=session_id,
                 taskId=task_id,
@@ -245,16 +335,16 @@ class UnifiedIsekAdapter(Adapter):
                 }
             )
         else:
-            # 信息收集完成，进入确认阶段
+            # Information collection complete, move to confirmation phase
             conv_state["stage"] = "confirmation"
             
-            # 生成确认摘要
+            # Generate confirmation summary
             summary = self._generate_info_summary(conv_state)
             yield new_agent_text_message(
                 f"Perfect! I've collected all the information:\n{summary}\n\nShall I proceed with processing your request? (yes/no)"
             )
             
-            # 等待确认
+            # Wait for confirmation
             yield TaskStatusUpdateEvent(
                 contextId=session_id,
                 taskId=task_id,
@@ -266,11 +356,25 @@ class UnifiedIsekAdapter(Adapter):
     async def _handle_confirmation_continuation(
         self, task_id: str, session_id: str, user_input: str, conv_state: dict
     ) -> AsyncGenerator[Any, None]:
-        """处理确认阶段的延续"""
+        """
+        Handle continuation of confirmation phase
+        
+        Processes user's confirmation response and either proceeds with execution
+        or cancels the request.
+        
+        Args:
+            task_id: Current task identifier
+            session_id: Session identifier
+            user_input: User's confirmation response
+            conv_state: Current conversation state
+            
+        Yields:
+            Events for confirmation processing
+        """
         user_response = user_input.lower().strip()
         
         if user_response in ["yes", "y", "proceed", "ok", "确认"]:
-            # 用户确认，开始处理
+            # User confirmed, proceed with processing
             yield TaskStatusUpdateEvent(
                 contextId=session_id,
                 taskId=task_id,
@@ -279,16 +383,16 @@ class UnifiedIsekAdapter(Adapter):
             )
             yield new_agent_text_message("Great! Processing your request now...")
             
-            # 构建完整上下文并处理
+            # Build full context and process
             full_context = self._build_full_context(conv_state)
             async for event in self._execute_short_task(task_id, session_id, full_context):
                 yield event
             
-            # 清理会话状态
+            # Clean up conversation state
             self.conversation_states.pop(session_id, None)
             
         elif user_response in ["no", "n", "cancel", "stop", "取消"]:
-            # 用户取消
+            # User cancelled
             yield new_agent_text_message(
                 "Understood. The request has been cancelled. Feel free to start over if needed."
             )
@@ -299,15 +403,15 @@ class UnifiedIsekAdapter(Adapter):
                 final=True
             )
             
-            # 清理会话状态
+            # Clean up conversation state
             self.conversation_states.pop(session_id, None)
         else:
-            # 无效响应，请求再次确认
+            # Invalid response, ask for clarification
             yield new_agent_text_message(
                 "I didn't understand that. Please respond with 'yes' to proceed or 'no' to cancel."
             )
             
-            # 保持确认状态
+            # Maintain confirmation state
             yield TaskStatusUpdateEvent(
                 contextId=session_id,
                 taskId=task_id,
@@ -319,14 +423,27 @@ class UnifiedIsekAdapter(Adapter):
     async def _handle_new_conversation(
         self, task_id: str, session_id: str, user_input: str
     ) -> AsyncGenerator[Any, None]:
-        """处理新对话开始"""
+        """
+        Handle new conversation start
+        
+        Analyzes the initial user input and either starts information gathering
+        or proceeds directly with execution.
+        
+        Args:
+            task_id: Current task identifier
+            session_id: Session identifier
+            user_input: Initial user input
+            
+        Yields:
+            Events for new conversation handling
+        """
         multiturn_result = await self._analyze_multiturn_requirement(user_input)
         
         if multiturn_result["needs_more_info"]:
-            # 需要更多信息，启动收集流程
+            # Need more information, start collection process
             yield new_agent_text_message(multiturn_result["clarification_question"])
             
-            # 创建等待输入的任务状态更新
+            # Create task status update for waiting input
             yield TaskStatusUpdateEvent(
                 contextId=session_id,
                 taskId=task_id,
@@ -339,7 +456,7 @@ class UnifiedIsekAdapter(Adapter):
                 }
             )
             
-            # 保存会话状态
+            # Save conversation state
             self.conversation_states[session_id] = {
                 "stage": "collecting_info",
                 "original_request": user_input,
@@ -348,18 +465,31 @@ class UnifiedIsekAdapter(Adapter):
                 "current_question": multiturn_result["required_info"][0]
             }
         else:
-            # 信息充足，直接处理
+            # Sufficient information, process directly
             async for event in self._execute_short_task(task_id, session_id, user_input):
                 yield event
     
     async def _handle_multiturn_flow(
         self, task_id: str, session_id: str, multiturn_result: dict, session_context: dict
     ) -> AsyncGenerator[Any, None]:
-        """处理多轮对话流程"""
-        # 发送澄清问题
+        """
+        Handle multi-turn conversation flow
+        
+        Initiates the information gathering process when more details are needed.
+        
+        Args:
+            task_id: Current task identifier
+            session_id: Session identifier
+            multiturn_result: Result from multi-turn analysis
+            session_context: Current session context
+            
+        Yields:
+            Events for multi-turn flow handling
+        """
+        # Send clarification question
         yield new_agent_text_message(multiturn_result["clarification_question"])
         
-        # 创建等待输入的任务状态更新
+        # Create task status update for waiting input
         yield TaskStatusUpdateEvent(
             contextId=session_id,
             taskId=task_id,
@@ -371,7 +501,7 @@ class UnifiedIsekAdapter(Adapter):
             }
         )
         
-        # 保存会话状态
+        # Save conversation state
         self.conversation_states[session_id] = {
             "stage": "collecting_info",
             "original_request": session_context.get("user_input", ""),
@@ -381,12 +511,24 @@ class UnifiedIsekAdapter(Adapter):
         }
     
     def _build_contextual_prompt(self, user_input: str, session_context: dict) -> str:
-        """构建带上下文的提示词"""
+        """
+        Build contextual prompt with conversation history
+        
+        Enhances the user input with relevant conversation context to provide
+        better continuity and understanding.
+        
+        Args:
+            user_input: Current user input
+            session_context: Session context containing conversation history
+            
+        Returns:
+            Enhanced prompt with conversation context
+        """
         session_id = session_context.get("session_id")
         if not session_id:
             return user_input
         
-        # 使用SessionStore的上下文格式
+        # Use SessionStore context format
         context_text = self.session_manager.get_conversation_context(session_id, limit=3)
         
         if context_text:
@@ -400,12 +542,34 @@ Please respond considering the conversation history."""
             return user_input
     
     def _is_long_running_task(self, prompt: str) -> bool:
-        """判断是否为长时间运行任务"""
+        """
+        Determine if the task is likely to be long-running
+        
+        Uses keyword analysis to identify tasks that might take significant time.
+        
+        Args:
+            prompt: The task prompt to analyze
+            
+        Returns:
+            True if task is likely to be long-running, False otherwise
+        """
         long_task_keywords = ["analyze", "process", "generate", "create", "build", "train", "complex"]
         return any(keyword in prompt.lower() for keyword in long_task_keywords)
     
     async def _execute_long_task(self, task_id: str, session_id: str, prompt: str) -> AsyncGenerator[Any, None]:
-        """执行长时间任务，支持进度报告"""
+        """
+        Execute long-running tasks with progress reporting
+        
+        Provides step-by-step progress updates and handles cancellation gracefully.
+        
+        Args:
+            task_id: Task identifier
+            session_id: Session identifier
+            prompt: Task prompt
+            
+        Yields:
+            Progress events and final result
+        """
         steps = [
             ("Understanding your request", 0.2, "Processing your input..."),
             ("Analyzing requirements", 0.4, "Breaking down the task..."),
@@ -414,11 +578,11 @@ Please respond considering the conversation history."""
         ]
         
         for i, (step_name, progress, message) in enumerate(steps):
-            # 检查取消状态
+            # Check cancellation status
             if self._is_task_cancelled(task_id):
                 raise TaskCancelledException(f"Task {task_id} was cancelled")
             
-            # 发送进度更新
+            # Send progress update
             yield TaskStatusUpdateEvent(
                 contextId=session_id,
                 taskId=task_id,
@@ -431,13 +595,13 @@ Please respond considering the conversation history."""
                 }
             )
             
-            # 发送步骤消息
+            # Send step message
             yield new_agent_text_message(f"🔄 {message}")
             
-            # 模拟工作时间
+            # Simulate work time
             await asyncio.sleep(0.5)
         
-        # 执行实际的ISEK team处理
+        # Execute actual ISEK team processing
         if not self._is_task_cancelled(task_id):
             result = self.isek_team.run(
                 message=prompt,
@@ -445,51 +609,83 @@ Please respond considering the conversation history."""
                 session_id=session_id
             )
             
-            # 保存对话记录
+            # Save conversation record
             self.session_manager.save_conversation_turn(session_id, prompt, result)
             
             yield new_agent_text_message(f"✅ Task completed:\n\n{result}")
     
     async def _execute_short_task(self, task_id: str, session_id: str, prompt: str) -> AsyncGenerator[Any, None]:
-        """执行短任务 - 支持流式和非流式输出"""
+        """
+        Execute short tasks with streaming and non-streaming support
+        
+        Handles both streaming and non-streaming execution modes based on configuration.
+        
+        Args:
+            task_id: Task identifier
+            session_id: Session identifier
+            prompt: Task prompt
+            
+        Yields:
+            Task execution events
+        """
         if self.enable_streaming:
-            # 流式执行
+            # Streaming execution
             async for event in self._execute_streaming_task(task_id, session_id, prompt):
                 yield event
         else:
-            # 非流式执行
-            result = self.isek_team.run(
-                message=prompt,
-                user_id="default", 
-                session_id=session_id
+            # Non-streaming execution - use asyncio to avoid blocking
+            import asyncio
+            
+            # Run synchronous isek_team.run in thread pool
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(
+                None,
+                lambda: self.isek_team.run(
+                    message=prompt,
+                    user_id="default", 
+                    session_id=session_id
+                )
             )
             
-            # 保存对话记录
+            # Save conversation record
             self.session_manager.save_conversation_turn(session_id, prompt, result)
             
             yield new_agent_text_message(result)
     
     async def _execute_streaming_task(self, task_id: str, session_id: str, prompt: str) -> AsyncGenerator[Any, None]:
-        """流式执行任务"""
-        # 检查ISEK team是否支持流式输出
+        """
+        Execute task with streaming response
+        
+        Provides real-time streaming output either using native streaming
+        or simulated streaming by chunking the response.
+        
+        Args:
+            task_id: Task identifier
+            session_id: Session identifier
+            prompt: Task prompt
+            
+        Yields:
+            Streaming response chunks
+        """
+        # Check if ISEK team supports streaming output
         if hasattr(self.isek_team, 'stream'):
-            # 使用team的流式方法
+            # Use team's native streaming method
             async for chunk in self.isek_team.stream(
                 message=prompt,
                 user_id="default",
                 session_id=session_id
             ):
                 yield new_agent_text_message(chunk)
-                await asyncio.sleep(0.05)  # 控制流式速度
+                await asyncio.sleep(0.05)  # Control streaming speed
         else:
-            # 模拟流式输出
+            # Simulate streaming output
             result = self.isek_team.run(
                 message=prompt,
                 user_id="default",
                 session_id=session_id
             )
             
-            # 按单词流式输出
+            # Stream output by words
             words = result.split()
             chunk_size = 5
             
@@ -501,26 +697,63 @@ Please respond considering the conversation history."""
                 yield new_agent_text_message(chunk)
                 await asyncio.sleep(0.1)
         
-        # 保存对话记录
+        # Save conversation record
         self.session_manager.save_conversation_turn(session_id, prompt, "streaming response")
     
     async def _save_conversation_turn(self, session_id: str, user_input: str, agent_response: str):
-        """保存对话轮次"""
+        """
+        Save conversation turn to session history
+        
+        Args:
+            session_id: Session identifier
+            user_input: User's input
+            agent_response: Agent's response
+        """
         self.session_manager.save_conversation_turn(session_id, user_input, agent_response)
     
     def _is_task_cancelled(self, task_id: str) -> bool:
-        """检查任务是否被取消"""
+        """
+        Check if a task has been cancelled
+        
+        Args:
+            task_id: Task identifier to check
+            
+        Returns:
+            True if task is cancelled, False otherwise
+        """
         return self.running_tasks.get(task_id, {}).get("cancelled", False)
     
     def _generate_info_summary(self, conv_state: dict) -> str:
-        """生成信息收集摘要"""
+        """
+        Generate summary of collected information
+        
+        Creates a formatted summary of all information collected during
+        multi-turn conversation.
+        
+        Args:
+            conv_state: Conversation state containing collected information
+            
+        Returns:
+            Formatted summary string
+        """
         summary_parts = []
         for info_type, value in conv_state.get("collected_info", {}).items():
             summary_parts.append(f"- {info_type}: {value}")
         return "\n".join(summary_parts)
     
     def _build_full_context(self, conv_state: dict) -> str:
-        """构建完整的上下文"""
+        """
+        Build complete context from conversation state
+        
+        Combines original request with collected information to create
+        a comprehensive context for task execution.
+        
+        Args:
+            conv_state: Conversation state with original request and collected info
+            
+        Returns:
+            Complete context string
+        """
         original = conv_state.get("original_request", "")
         collected = conv_state.get("collected_info", {})
         
@@ -533,7 +766,18 @@ Please respond considering the conversation history."""
         return "\n".join(context_parts)
     
     def run(self, prompt: str, **kwargs) -> str:
-        """同步执行方法（向后兼容）"""
+        """
+        Synchronous execution method (backward compatibility)
+        
+        Provides a simple synchronous interface for basic task execution.
+        
+        Args:
+            prompt: Task prompt
+            **kwargs: Additional arguments including session_id and user_id
+            
+        Returns:
+            Task execution result as string
+        """
         session_id = kwargs.get("session_id", "default")
         user_id = kwargs.get("user_id", "default")
         
@@ -544,8 +788,15 @@ Please respond considering the conversation history."""
         )
     
     def get_adapter_card(self) -> AdapterCard:
-        """获取adapter卡片信息"""
-        # 获取team配置信息
+        """
+        Get adapter card information
+        
+        Returns metadata about this adapter for discovery and integration.
+        
+        Returns:
+            AdapterCard with adapter metadata
+        """
+        # Get team configuration information
         team_name = getattr(self.isek_team, 'name', 'ISEK Team')
         team_description = getattr(self.isek_team, 'description', 'AI agent team')
         
@@ -558,23 +809,48 @@ Please respond considering the conversation history."""
         )
     
     def supports_streaming(self) -> bool:
-        """是否支持流式响应"""
+        """
+        Check if streaming responses are supported
+        
+        Returns:
+            True if streaming is enabled, False otherwise
+        """
         return self.enable_streaming
     
     def supports_cancellation(self) -> bool:
-        """是否支持任务取消"""
+        """
+        Check if task cancellation is supported
+        
+        Returns:
+            True (this adapter supports cancellation)
+        """
         return True
     
     def supports_multiturn(self) -> bool:
-        """是否支持多轮对话"""
+        """
+        Check if multi-turn conversations are supported
+        
+        Returns:
+            True (this adapter supports multi-turn conversations)
+        """
         return True
     
     def enable_streaming_mode(self, enabled: bool = True):
-        """启用或禁用流式模式"""
+        """
+        Enable or disable streaming mode
+        
+        Args:
+            enabled: Whether to enable streaming mode
+        """
         self.enable_streaming = enabled
     
     def get_streaming_status(self) -> bool:
-        """获取当前流式模式状态"""
+        """
+        Get current streaming mode status
+        
+        Returns:
+            Current streaming mode status
+        """
         return self.enable_streaming
 
 

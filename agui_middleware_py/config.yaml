@@ -1,0 +1,33 @@
+# AGUI Middleware Configuration
+middleware:
+  name: "AGUI-ISEK Middleware"
+  version: "1.0.0"
+  port: 8080
+
+# ISEK Node Configuration
+isek:
+  node_id: "agui_middleware_node"
+  host: "0.0.0.0"
+  port: 8082
+  p2p_enabled: false
+  
+  # ETCD Registry
+  registry:
+    host: "47.236.116.81"
+    port: 2379
+    
+# AGUI Configuration
+agui:
+  max_concurrent_sessions: 10
+  stream_buffer_size: 1024
+  response_timeout: 30
+
+# Logging
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  
+# Development settings
+development:
+  debug: true
+  reload: true
