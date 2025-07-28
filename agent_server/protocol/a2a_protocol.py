@@ -383,6 +383,35 @@ class A2AProtocol(Protocol):
             return {"error": response["error"], "task_id": task_id, "status": "cancel_failed"}
         return response.get("result", response)
 
+    # ============ A2A Native Streaming Support (透传模式) ============
+    
+    async def send_message_streaming(self, sender_node_id: str, target_address: str, message: str):
+        """A2A原生streaming - HTTP直连"""
+        async with httpx.AsyncClient(timeout=120) as httpx_client:
+            client = A2AClient(httpx_client=httpx_client, url=target_address)
+            request = build_send_message_request(sender_node_id, message)
+            
+            async for response in client.send_message_streaming(request):
+                yield response
+    
+    async def send_message_streaming_p2p(self, sender_node_id: str, p2p_address: str, message: str):
+        """A2A原生streaming - P2P透传
+        
+        P2P server必须支持streaming透传：
+        1. 识别streaming请求 
+        2. 保持长连接不中断
+        3. 透传每个chunk而不是缓冲
+        """
+        async with httpx.AsyncClient(timeout=120) as httpx_client:
+            # 关键：使用P2P streaming端点，让P2P server透传A2A streaming
+            p2p_url = f"http://localhost:{self.p2p_server_port}/call_peer?p2p_address={urllib.parse.quote(p2p_address)}"
+            client = A2AClient(httpx_client=httpx_client, url=p2p_url)
+            request = build_send_message_request(sender_node_id, message)
+            
+            # A2A Client的send_message_streaming会自动处理SSE/chunked响应
+            async for response in client.send_message_streaming(request):
+                yield response
+
     def get_task(self, sender_node_id: str, target_address: str, task_id: str, **kwargs) -> Dict[str, Any]:
         """Direct A2A get task status"""
         try:
